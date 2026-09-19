@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nubapp
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: nubapp
+    volumes:
+      - nubapp_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nubapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: nubapp
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: nubapp
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 3000
+    ports:
+      - "${APP_PORT}:3000"
+    volumes:
+      - nubapp_uploads:/app/backend/uploads
+
+volumes:
+  nubapp_db_data:
+  nubapp_uploads:

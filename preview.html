@@ -1,0 +1,1465 @@
+<title>NUBAPP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#ffffff;
+    --surface:#ffffff;
+    --surface-2:#f7f5ef;
+    --line:#e5e1d3;
+    --ink:#141414;
+    --muted:#6b6b64;
+    --accent:#b6912c;
+    --accent-ink:#171206;
+    --accent-soft:#f5ecd2;
+    --ok:#141414;
+    --ok-soft:#f5ecd2;
+    --warn:#141414;
+    --warn-soft:#efece2;
+    --peligro:#9a3324;
+    --peligro-soft:#f3e4df;
+    --shadow:0 1px 2px rgba(20,20,20,.05), 0 8px 24px -12px rgba(20,20,20,.16);
+    --radius:14px;
+    --font-display:'Oswald', 'Arial Narrow', sans-serif;
+    --font-body:'Work Sans', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0e0d0a;
+      --surface:#181712;
+      --surface-2:#1f1d16;
+      --line:#332f22;
+      --ink:#f5f1e6;
+      --muted:#a7a294;
+      --accent:#d9b13c;
+      --accent-ink:#171206;
+      --accent-soft:#3a3011;
+      --ok:#f5f1e6;
+      --ok-soft:#3a3011;
+      --warn:#f5f1e6;
+      --warn-soft:#2a281f;
+      --peligro:#d9695a;
+      --peligro-soft:#3a1f19;
+      --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0e0d0a;
+    --surface:#181712;
+    --surface-2:#1f1d16;
+    --line:#332f22;
+    --ink:#f5f1e6;
+    --muted:#a7a294;
+    --accent:#d9b13c;
+    --accent-ink:#171206;
+    --accent-soft:#3a3011;
+    --ok:#f5f1e6;
+    --ok-soft:#3a3011;
+    --warn:#f5f1e6;
+    --warn-soft:#2a281f;
+    --peligro:#d9695a;
+    --peligro-soft:#3a1f19;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{
+    font-family:var(--font-display);
+    text-transform:uppercase;
+    letter-spacing:.02em;
+    text-wrap:balance;
+    margin:0;
+  }
+  button{
+    font-family:var(--font-body);
+    cursor:pointer;
+  }
+  input{
+    font-family:var(--font-body);
+  }
+  .oculto{display:none !important;}
+
+  /* ---------- franja de aviso ---------- */
+  .franja-preview{
+    background:var(--accent);
+    color:var(--accent-ink);
+    font-size:12.5px;
+    font-weight:600;
+    text-align:center;
+    padding:7px 16px;
+    letter-spacing:.01em;
+  }
+
+  /* ---------- login ---------- */
+  .pantalla-login{
+    min-height:calc(100vh - 32px);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:32px 16px;
+  }
+  .tarjeta-login{
+    width:100%;
+    max-width:380px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:36px 32px 30px;
+  }
+  .escudo{
+    width:52px;height:52px;
+    border-radius:12px;
+    background:var(--accent);
+    color:var(--accent-ink);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-display);
+    font-size:22px;
+    margin-bottom:18px;
+  }
+  .tarjeta-login h1{font-size:26px;color:var(--ink);}
+  .tarjeta-login .sub{
+    color:var(--muted);
+    font-size:14px;
+    margin:4px 0 24px;
+  }
+  .campo{
+    display:flex;flex-direction:column;gap:6px;
+    margin-bottom:14px;
+  }
+  .campo label{
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:.03em;
+  }
+  .campo input{
+    padding:10px 12px;
+    border-radius:8px;
+    border:1px solid var(--line);
+    background:var(--surface-2);
+    color:var(--ink);
+    font-size:15px;
+  }
+  .campo input:focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:1px;
+  }
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:11px 18px;
+    border-radius:9px;
+    border:1px solid transparent;
+    font-weight:600;
+    font-size:14.5px;
+  }
+  .btn-primario{background:var(--accent);color:var(--accent-ink);}
+  .btn-primario:hover{filter:brightness(1.06);}
+  .btn-primario:focus-visible{outline:2px solid var(--ink);outline-offset:2px;}
+  .btn-secundario{background:var(--surface-2);color:var(--ink);border-color:var(--line);}
+  .btn-secundario:hover{background:var(--line);}
+  .btn-fantasma{background:transparent;color:var(--muted);border-color:var(--line);}
+  .btn-peligro-confirmar{background:var(--peligro-soft);color:var(--peligro);border-color:var(--peligro);}
+  .btn-ancho{width:100%;}
+
+  .login-entrar{margin-top:20px;}
+  .separador-login{
+    display:flex;align-items:center;gap:10px;
+    margin:22px 0 14px;
+    color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;
+  }
+  .separador-login::before,.separador-login::after{
+    content:"";flex:1;height:1px;background:var(--line);
+  }
+  .accesos-demo{display:flex;flex-direction:column;gap:8px;}
+  .accesos-demo button{font-size:13.5px;padding:9px 14px;text-align:left;}
+  .accesos-demo small{display:block;color:var(--muted);font-weight:400;margin-top:1px;}
+
+  /* ---------- shell de la app ---------- */
+  .app-shell{min-height:100vh;display:flex;flex-direction:column;}
+  header.barra{
+    background:var(--surface);
+    border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:22px;
+    padding:12px 24px;
+    flex-wrap:wrap;
+  }
+  .marca{
+    font-family:var(--font-display);
+    color:var(--accent);
+    font-size:20px;
+    letter-spacing:.02em;
+  }
+  nav.principal{display:flex;gap:4px;flex:1;}
+  nav.principal a{
+    padding:8px 14px;
+    border-radius:8px;
+    color:var(--muted);
+    text-decoration:none;
+    font-weight:600;
+    font-size:14px;
+    cursor:pointer;
+  }
+  nav.principal a:hover{color:var(--ink);background:var(--surface-2);}
+  nav.principal a.activo{color:var(--ink);background:var(--accent-soft);}
+  .caja-usuario{display:flex;align-items:center;gap:12px;}
+  .info-usuario{text-align:right;line-height:1.25;}
+  .info-usuario .nombre{font-size:13.5px;font-weight:600;}
+  .info-usuario .rol{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+
+  main.contenido{
+    max-width:980px;width:100%;margin:0 auto;
+    padding:28px 24px 60px;
+    flex:1;
+  }
+
+  .cabecera-vista{
+    display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;
+    margin-bottom:20px;
+  }
+  .cabecera-vista h2{font-size:24px;}
+  .cabecera-vista p{margin:4px 0 0;color:var(--muted);font-size:14px;}
+
+  /* ---------- inicio / dashboard ---------- */
+  .rejilla-dashboard{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+    gap:16px;
+  }
+  .tarjeta-dash{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:18px 18px 16px;
+    box-shadow:var(--shadow);
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .tarjeta-dash .titulo-dash{
+    display:flex;align-items:center;gap:8px;
+    font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+  }
+  .punto{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .punto-cumple{background:var(--accent);}
+  .punto-resultado{background:var(--ink);}
+  .punto-lesion{background:var(--muted);}
+  .punto-falta{background:var(--peligro);}
+  .lista-dash{display:flex;flex-direction:column;gap:9px;font-size:14px;}
+  .fila-dash{display:flex;justify-content:space-between;gap:10px;align-items:baseline;}
+  .fila-dash .principal{font-weight:600;}
+  .fila-dash .detalle{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .resultado-marcador{font-family:var(--font-display);font-variant-numeric:tabular-nums;font-size:15px;}
+  .gana{color:var(--ink);}
+  .pierde{color:var(--peligro);}
+
+  /* ---------- usuarios ---------- */
+  .banner-preview-local{
+    background:var(--surface-2);
+    border:1px dashed var(--line);
+    border-radius:10px;
+    padding:10px 14px;
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:18px;
+  }
+  .tarjeta-form{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:20px;
+    max-width:440px;
+    margin-bottom:22px;
+    display:flex;flex-direction:column;gap:12px;
+  }
+  .tarjeta-form h3{font-size:15px;}
+  .roles-checks{display:flex;flex-wrap:wrap;gap:8px 14px;}
+  .roles-checks label{
+    display:flex;align-items:center;gap:6px;
+    font-size:13px;color:var(--ink);font-weight:500;
+  }
+  .roles-checks input{accent-color:var(--accent);}
+
+  .barra-filtros-preview{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+  .barra-filtros-preview input,.barra-filtros-preview select{
+    padding:10px 12px;border-radius:8px;border:1px solid var(--line);
+    background:var(--surface-2);color:var(--ink);font-size:14px;
+  }
+  .barra-filtros-preview input[type="search"]{flex:1;min-width:220px;}
+  .form-linea{
+    flex-direction:row !important;flex-wrap:wrap;align-items:flex-end;gap:10px;max-width:none !important;
+  }
+  .form-linea .campo{margin-bottom:0;}
+  .enlace-suave{
+    background:none;border:none;padding:0;text-decoration:underline;
+    color:var(--muted);font-size:12px;cursor:pointer;
+  }
+
+  .foto-jugador{
+    width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;
+    background:var(--surface-2);border:1px solid var(--line);
+  }
+  .foto-jugador-vacia{
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;
+  }
+  .foto-jugador-grande{width:72px;height:72px;font-size:26px;}
+  .jugador-nombre-fila{display:inline-flex;align-items:center;gap:8px;}
+
+  .ficha-tecnica-cabecera{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;margin-bottom:10px;}
+  .foto-subida{display:flex;flex-direction:column;align-items:center;gap:6px;width:100px;}
+  .foto-subida label.enlace-suave{cursor:pointer;}
+  .esquema-posiciones-envoltorio{flex:1;min-width:220px;max-width:280px;}
+  .esquema-posiciones{width:100%;max-width:240px;aspect-ratio:1/1;display:block;}
+  .fondo-cancha rect,.fondo-cancha circle,.fondo-cancha path,.fondo-cancha line{
+    fill:none;stroke:var(--line);stroke-width:1;
+  }
+  .marcador-posicion{cursor:pointer;}
+  .marcador-posicion circle{fill:var(--surface);stroke:var(--muted);stroke-width:1.2;}
+  .marcador-posicion text{font-size:5px;font-weight:700;text-anchor:middle;fill:var(--muted);pointer-events:none;}
+  .marcador-posicion:hover circle{stroke:var(--ink);}
+  .marcador-posicion.principal circle{fill:var(--accent);stroke:var(--accent);}
+  .marcador-posicion.principal text{fill:var(--accent-ink);}
+  .marcador-posicion.secundaria circle{fill:var(--surface-2);stroke:var(--accent);stroke-width:1.6;}
+  .marcador-posicion.secundaria text{fill:var(--accent);}
+
+  .envoltorio-tabla{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    overflow-x:auto;
+  }
+  table.usuarios{width:100%;border-collapse:collapse;min-width:640px;}
+  table.usuarios th{
+    text-align:left;
+    font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+    padding:13px 16px;border-bottom:1px solid var(--line);
+    background:var(--surface-2);
+  }
+  table.usuarios td{
+    padding:13px 16px;border-bottom:1px solid var(--line);
+    font-size:14px;vertical-align:middle;
+  }
+  table.usuarios tr:last-child td{border-bottom:none;}
+  tr.inactivo-fila td{opacity:.5;}
+  .etiquetas-roles{display:flex;flex-wrap:wrap;gap:5px;}
+  .etiqueta-rol{
+    font-size:11px;font-weight:600;
+    padding:3px 8px;border-radius:99px;
+    background:var(--accent-soft);color:var(--accent);
+    white-space:nowrap;
+  }
+  .estado-pill{
+    font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px;
+  }
+  .estado-activo{background:var(--ok-soft);color:var(--ok);}
+  .estado-inactivo{background:var(--surface-2);color:var(--muted);}
+  .acciones-usuario{display:flex;gap:6px;flex-wrap:wrap;}
+  .acciones-usuario button{font-size:12.5px;padding:6px 10px;border-radius:7px;}
+
+  @media (max-width:640px){
+    main.contenido{padding:20px 14px 48px;}
+    header.barra{padding:12px 14px;}
+    .cabecera-vista{align-items:flex-start;}
+  }
+</style>
+
+<div class="franja-preview">Vista previa de diseño · NUBAPP · datos de ejemplo, sin conexión a la base de datos real</div>
+
+<!-- ============ LOGIN ============ -->
+<div id="pantalla-login" class="pantalla-login">
+  <div class="tarjeta-login">
+    <div class="escudo">NB</div>
+    <h1>NUBAPP</h1>
+    <p class="sub">AD Nuevo Baztán</p>
+
+    <div class="campo">
+      <label for="campo-email">Email</label>
+      <input id="campo-email" type="email" placeholder="tú@adnb.es" value="admin@adnb.es">
+    </div>
+    <div class="campo">
+      <label for="campo-password">Contraseña</label>
+      <input id="campo-password" type="password" placeholder="••••••••" value="········">
+    </div>
+    <button class="btn btn-primario btn-ancho login-entrar" onclick="entrar('administrador')">Entrar</button>
+
+    <div class="separador-login">o prueba como</div>
+    <div class="accesos-demo">
+      <button class="btn btn-secundario" onclick="entrar('administrador')">Administrador<small>Acceso total, gestiona usuarios</small></button>
+      <button class="btn btn-secundario" onclick="entrar('entrenador')">Entrenador<small>Ve solo sus jugadores y equipos</small></button>
+      <button class="btn btn-secundario" onclick="entrar('deportista')">Deportista<small>Su ficha, cuotas y asistencia</small></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app-shell" class="app-shell oculto">
+  <header class="barra">
+    <span class="marca">NUBAPP</span>
+    <nav class="principal">
+      <a id="nav-inicio" onclick="irA('inicio')">Inicio</a>
+      <a id="nav-deportistas" onclick="irA('deportistas')">Deportistas</a>
+      <a id="nav-equipos" onclick="irA('equipos')">Equipos</a>
+      <a id="nav-usuarios" onclick="irA('usuarios')">Usuarios</a>
+    </nav>
+    <div class="caja-usuario">
+      <div class="info-usuario">
+        <div class="nombre" id="nombre-usuario-actual">—</div>
+        <div class="rol" id="rol-usuario-actual">—</div>
+      </div>
+      <button class="btn btn-fantasma" onclick="salir()">Salir</button>
+    </div>
+  </header>
+
+  <main class="contenido">
+
+    <!-- ---- INICIO ---- -->
+    <section id="vista-inicio">
+      <div class="cabecera-vista">
+        <div>
+          <h2>Inicio</h2>
+          <p id="descripcion-inicio">Resumen de la semana</p>
+        </div>
+      </div>
+
+      <div class="banner-preview-local">Diseño del futuro dashboard — estos cuatro bloques aún no están conectados a datos reales, es solo para ver cómo va a quedar.</div>
+
+      <div class="rejilla-dashboard">
+        <div class="tarjeta-dash">
+          <div class="titulo-dash"><span class="punto punto-cumple"></span>Cumpleaños esta semana</div>
+          <div class="lista-dash">
+            <div class="fila-dash"><span class="principal">J. Herrero · Cadete</span><span class="detalle">mié 16</span></div>
+            <div class="fila-dash"><span class="principal">A. Cano · Baloncesto</span><span class="detalle">vie 18</span></div>
+          </div>
+        </div>
+
+        <div class="tarjeta-dash">
+          <div class="titulo-dash"><span class="punto punto-resultado"></span>Resultados de la semana</div>
+          <div class="lista-dash">
+            <div class="fila-dash"><span class="principal">Cadete vs La Meca</span><span class="resultado-marcador gana">3–1</span></div>
+            <div class="fila-dash"><span class="principal">Senior vs Rivas B</span><span class="resultado-marcador pierde">0–2</span></div>
+          </div>
+        </div>
+
+        <div class="tarjeta-dash">
+          <div class="titulo-dash"><span class="punto punto-lesion"></span>Lesionados</div>
+          <div class="lista-dash">
+            <div class="fila-dash"><span class="principal">M. Ortega · Senior</span><span class="detalle">alta 28 sep</span></div>
+          </div>
+        </div>
+
+        <div class="tarjeta-dash">
+          <div class="titulo-dash"><span class="punto punto-falta"></span>Faltas sin justificar (+3)</div>
+          <div class="lista-dash">
+            <div class="fila-dash"><span class="principal">R. Vidal · Cadete</span><span class="detalle">4 sesiones</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---- DEPORTISTAS ---- -->
+    <section id="vista-deportistas" class="oculto">
+      <div id="deportistas-lista-wrap">
+        <div class="cabecera-vista">
+          <div>
+            <h2>Fichas de deportistas</h2>
+            <p>Ficha general — también construida de verdad. La ficha técnica (dorsal, posición, valoraciones) llega con el módulo de equipos.</p>
+          </div>
+          <button id="boton-nuevo-deportista" class="btn btn-primario" onclick="alternarFormularioDeportista()">+ Nuevo deportista</button>
+        </div>
+
+        <div class="banner-preview-local">Igual que en Usuarios: aquí puedes crear, marcar lesión y dar de baja, pero solo en esta vista previa — no toca tu base de datos real.</div>
+
+        <form id="formulario-deportista" class="tarjeta-form oculto" onsubmit="crearDeportista(event)">
+          <h3>Nuevo deportista</h3>
+          <div class="campo">
+            <label for="dep-nombre">Nombre</label>
+            <input id="dep-nombre" required placeholder="Nombre">
+          </div>
+          <div class="campo">
+            <label for="dep-apellidos">Apellidos</label>
+            <input id="dep-apellidos" required placeholder="Apellidos">
+          </div>
+          <div class="campo">
+            <label for="dep-nacimiento">Fecha de nacimiento</label>
+            <input id="dep-nacimiento" type="date" required>
+          </div>
+          <button class="btn btn-primario" type="submit">Crear ficha</button>
+        </form>
+
+        <div class="barra-filtros-preview">
+          <input type="search" id="filtro-dep-texto" placeholder="Buscar por nombre, apellidos o nº de socio…" oninput="renderizarDeportistas()">
+          <select id="filtro-dep-deporte" onchange="renderizarDeportistas()"><option value="">Todos los deportes</option></select>
+          <select id="filtro-dep-estado" onchange="renderizarDeportistas()">
+            <option value="activo">Activos</option>
+            <option value="inactivo">Inactivos</option>
+            <option value="todos">Todos los estados</option>
+          </select>
+        </div>
+
+        <div class="envoltorio-tabla">
+          <table class="usuarios">
+            <thead>
+              <tr><th>Nombre</th><th>Fecha nacimiento</th><th>Nº socio</th><th>Deportes</th><th>Lesionado</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody id="cuerpo-tabla-deportistas"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="deportistas-detalle" class="oculto">
+        <button class="enlace-suave" style="margin-bottom:14px;" onclick="volverDeportistas()">‹ Volver a deportistas</button>
+        <div class="cabecera-vista">
+          <div><h2 id="detalle-dep-titulo">—</h2></div>
+          <div id="detalle-dep-acciones"></div>
+        </div>
+
+        <h3 style="font-size:15px;margin:18px 0 10px;">Datos generales</h3>
+        <div id="detalle-dep-datos" style="margin-bottom:14px;"></div>
+
+        <h3 style="font-size:15px;margin:24px 0 10px;">Historial de deportes</h3>
+        <p style="color:var(--muted);font-size:13px;margin:-4px 0 12px;">Cada alta y baja queda registrada con su fecha — nada se borra al dar de baja, solo se cierra el periodo.</p>
+        <div class="envoltorio-tabla" style="margin-bottom:14px;">
+          <table class="usuarios">
+            <thead><tr><th>Deporte</th><th>Alta</th><th>Baja</th><th></th></tr></thead>
+            <tbody id="cuerpo-tabla-historial"></tbody>
+          </table>
+        </div>
+        <form id="form-nuevo-periodo" class="tarjeta-form form-linea" onsubmit="anadirPeriodoHistorial(event)">
+          <div class="campo" style="flex:1;min-width:180px;"><label>Deporte</label><select id="select-nuevo-periodo-deporte"></select></div>
+          <div class="campo"><label>Fecha de alta</label><input id="input-nuevo-periodo-alta" type="date" required></div>
+          <button class="btn btn-secundario" type="submit">Dar de alta en este deporte</button>
+        </form>
+
+        <h3 style="font-size:15px;margin:24px 0 10px;">Histórico de cuotas</h3>
+        <p style="color:var(--muted);font-size:13px;">Este apartado se activa con el módulo de gestión económica (siguiente bloque): aquí se verán los pagos, meses cubiertos y pendientes de este deportista.</p>
+      </div>
+    </section>
+
+    <!-- ---- EQUIPOS ---- -->
+    <section id="vista-equipos" class="oculto">
+      <div id="equipos-lista-wrap">
+        <div class="cabecera-vista">
+          <div>
+            <h2>Equipos</h2>
+            <p>Un equipo es siempre de un deporte y una temporada (2026/2027) concretos.</p>
+          </div>
+          <button id="boton-nuevo-equipo" class="btn btn-primario" onclick="alternarFormularioEquipo()">+ Nuevo equipo</button>
+        </div>
+
+        <div class="banner-preview-local">También construida de verdad en el backend y el frontend — aquí puedes toquetearla con datos de ejemplo.</div>
+
+        <form id="formulario-equipo" class="tarjeta-form oculto" onsubmit="crearEquipo(event)">
+          <h3>Nuevo equipo</h3>
+          <div class="campo">
+            <label for="eq-nombre">Nombre del equipo</label>
+            <input id="eq-nombre" required placeholder="Ej: Cadete">
+          </div>
+          <div class="campo">
+            <label for="eq-deporte">Deporte</label>
+            <select id="eq-deporte" required></select>
+          </div>
+          <div class="campo">
+            <label for="eq-categoria">Categoría (opcional)</label>
+            <input id="eq-categoria" placeholder="Ej: Cadete, Regional A">
+          </div>
+          <button class="btn btn-primario" type="submit">Crear equipo</button>
+        </form>
+
+        <div class="envoltorio-tabla">
+          <table class="usuarios">
+            <thead>
+              <tr><th>Equipo</th><th>Deporte</th><th>Deportistas</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody id="cuerpo-tabla-equipos"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="equipos-detalle" class="oculto">
+        <button class="enlace-suave" style="margin-bottom:14px;" onclick="volverEquipos()">‹ Volver a equipos</button>
+        <div class="cabecera-vista">
+          <div><h2 id="detalle-equipo-titulo">—</h2></div>
+        </div>
+
+        <h3 style="font-size:15px;margin:18px 0 10px;">Personal del equipo</h3>
+        <div id="detalle-equipo-personal" style="margin-bottom:14px;"></div>
+        <form id="form-personal-equipo" class="tarjeta-form form-linea" onsubmit="asignarPersonalEquipo(event, equipoAbiertoId)">
+          <div class="campo" style="flex:1;min-width:180px;"><label>Persona</label><select id="select-personal-usuario"></select></div>
+          <div class="campo">
+            <label>Rol en el equipo</label>
+            <select id="select-personal-rol">
+              <option value="entrenador">Entrenador</option>
+              <option value="coordinador">Coordinador</option>
+              <option value="monitor">Monitor</option>
+            </select>
+          </div>
+          <button class="btn btn-secundario" type="submit">Añadir al equipo</button>
+        </form>
+
+        <h3 style="font-size:15px;margin:24px 0 10px;">Plantilla</h3>
+        <div class="envoltorio-tabla" style="margin-bottom:16px;">
+          <table class="usuarios">
+            <thead>
+              <tr><th>Dorsal</th><th>Nombre</th><th>Nº socio</th><th>Ficha técnica</th><th></th></tr>
+            </thead>
+            <tbody id="cuerpo-tabla-plantilla"></tbody>
+          </table>
+        </div>
+
+        <form id="form-fichar-equipo" class="tarjeta-form form-linea" onsubmit="ficharDeportistaEquipo(event, equipoAbiertoId)">
+          <div class="campo" style="flex:1;min-width:180px;"><label>Deportista</label><select id="select-fichar-deportista"></select></div>
+          <div class="campo"><label>Dorsal (opcional)</label><input id="input-fichar-dorsal" type="number" min="0" style="max-width:120px;"></div>
+          <button class="btn btn-secundario" type="submit">Fichar por este equipo</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ---- USUARIOS ---- -->
+    <section id="vista-usuarios" class="oculto">
+      <div class="cabecera-vista">
+        <div>
+          <h2>Gestión de usuarios</h2>
+          <p>Esta parte sí está construida de verdad en el backend y el frontend — aquí puedes toquetearla con datos de ejemplo.</p>
+        </div>
+        <button id="boton-nuevo-usuario" class="btn btn-primario" onclick="alternarFormulario()">+ Nuevo usuario</button>
+      </div>
+
+      <div class="banner-preview-local">Los cambios que hagas aquí (crear, editar roles, dar de baja) se quedan solo en esta vista previa — no tocan tu base de datos real.</div>
+
+      <form id="formulario-usuario" class="tarjeta-form oculto" onsubmit="crearUsuario(event)">
+        <h3>Nuevo usuario</h3>
+        <div class="campo">
+          <label for="nuevo-nombre">Nombre completo</label>
+          <input id="nuevo-nombre" required placeholder="Nombre Apellidos">
+        </div>
+        <div class="campo">
+          <label for="nuevo-email">Email (vacío si no tiene acceso propio)</label>
+          <input id="nuevo-email" type="email" placeholder="nombre@adnb.es">
+        </div>
+        <div class="campo">
+          <label>Roles</label>
+          <div class="roles-checks" id="roles-nuevo-usuario"></div>
+        </div>
+        <button class="btn btn-primario" type="submit">Crear usuario</button>
+      </form>
+
+      <div class="envoltorio-tabla">
+        <table class="usuarios">
+          <thead>
+            <tr><th>Nombre</th><th>Email</th><th>Roles</th><th>Estado</th><th></th></tr>
+          </thead>
+          <tbody id="cuerpo-tabla-usuarios"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  const ROLES = ['administrador','direccion_deportiva','coordinador','entrenador','monitor','deportista'];
+  const NOMBRES_ROL = {
+    administrador:'Administrador', direccion_deportiva:'Dirección deportiva',
+    coordinador:'Coordinador', entrenador:'Entrenador', monitor:'Monitor', deportista:'Deportista'
+  };
+
+  let usuarios = [
+    { id:1, nombre:'Sergio Blázquez', email:'sergio@adnb.es', roles:['administrador','entrenador'], inactivo:false, editando:false },
+    { id:2, nombre:'Chechu', email:'chechu@adnb.es', roles:['direccion_deportiva','coordinador'], inactivo:false, editando:false },
+    { id:3, nombre:'Juan Barreto', email:'juanbarreto@adnb.es', roles:['coordinador'], inactivo:false, editando:false },
+    { id:4, nombre:'Ainhoa Ruiz', email:'ainhoa@adnb.es', roles:['entrenador'], inactivo:false, editando:false },
+    { id:5, nombre:'Marcos Fernández', email:'marcos@adnb.es', roles:['monitor'], inactivo:true, editando:false },
+  ];
+  let siguienteId = 6;
+  let usuarioActual = null;
+  let vistaActual = 'inicio';
+
+  let deportistas = [
+    { id:1, nombre:'Javier', apellidos:'Herrero', fechaNacimiento:'2011-05-16', numeroSocio:'C-014', lesionado:false, lesionDetalle:'', inactivo:false, deportes:[1], fotoDataUrl:'' },
+    { id:2, nombre:'Ana', apellidos:'Cano', fechaNacimiento:'2010-09-18', numeroSocio:'B-027', lesionado:false, lesionDetalle:'', inactivo:false, deportes:[2,4], fotoDataUrl:'' },
+    { id:3, nombre:'Marta', apellidos:'Ortega', fechaNacimiento:'1999-02-03', numeroSocio:'S-005', lesionado:true, lesionDetalle:'Esguince tobillo', inactivo:false, deportes:[1], fotoDataUrl:'' },
+    { id:4, nombre:'Rubén', apellidos:'Vidal', fechaNacimiento:'2011-11-30', numeroSocio:'C-021', lesionado:false, lesionDetalle:'', inactivo:false, deportes:[1], fotoDataUrl:'' },
+  ];
+  let siguienteIdDeportista = 5;
+  let deportistaAbiertoId = null;
+
+  // Historial de altas/bajas por deporte: fechaBaja null = periodo abierto (practica ese deporte ahora mismo).
+  let historialDeportes = [
+    { id:1, deportistaId:1, deporteId:1, fechaAlta:'2025-09-01', fechaBaja:null },
+    { id:2, deportistaId:1, deporteId:2, fechaAlta:'2023-09-01', fechaBaja:'2024-06-30' },
+    { id:3, deportistaId:2, deporteId:2, fechaAlta:'2024-09-01', fechaBaja:null },
+    { id:4, deportistaId:2, deporteId:4, fechaAlta:'2025-01-15', fechaBaja:null },
+    { id:5, deportistaId:3, deporteId:1, fechaAlta:'2022-09-01', fechaBaja:null },
+    { id:6, deportistaId:4, deporteId:1, fechaAlta:'2025-09-01', fechaBaja:null },
+  ];
+  let siguienteIdHistorial = 7;
+
+  const DEPORTES = [
+    { id:1, nombre:'Fútbol', tipo:'equipo' },
+    { id:2, nombre:'Baloncesto', tipo:'equipo' },
+    { id:3, nombre:'Muay Thai', tipo:'individual' },
+    { id:4, nombre:'Patinaje', tipo:'individual' },
+    { id:5, nombre:'Pádel', tipo:'individual' },
+    { id:6, nombre:'Tenis', tipo:'individual' },
+    { id:7, nombre:'Gimnasia Rítmica', tipo:'individual' },
+  ];
+
+  let equipos = [
+    { id:1, nombre:'Cadete', categoria:'Cadete', deporteId:1, inactivo:false, personal:[{usuarioId:4, rol:'entrenador'}], deportistaIds:[1,4] },
+    { id:2, nombre:'Senior', categoria:'Senior', deporteId:1, inactivo:false, personal:[{usuarioId:3, rol:'coordinador'}], deportistaIds:[3] },
+    { id:3, nombre:'Infantil', categoria:'Infantil', deporteId:2, inactivo:false, personal:[], deportistaIds:[2] },
+  ];
+  let siguienteIdEquipo = 4;
+  let equipoAbiertoId = null;
+
+  // Posiciones fijas por deporte (en % del ancho/alto), igual que en la app real.
+  const POSICIONES_FUTBOL = [
+    { id:'portero', nombre:'Portero', x:50, y:92 },
+    { id:'central', nombre:'Central', x:35, y:78 },
+    { id:'central', nombre:'Central', x:65, y:78 },
+    { id:'lateral', nombre:'Lateral', x:10, y:75 },
+    { id:'lateral', nombre:'Lateral', x:90, y:75 },
+    { id:'medio_centro', nombre:'Medio centro', x:50, y:58 },
+    { id:'interior', nombre:'Interior', x:30, y:42 },
+    { id:'interior', nombre:'Interior', x:70, y:42 },
+    { id:'extremo', nombre:'Extremo', x:8, y:20 },
+    { id:'extremo', nombre:'Extremo', x:92, y:20 },
+    { id:'delantero', nombre:'Delantero', x:50, y:8 },
+  ];
+  const POSICIONES_BALONCESTO = [
+    { id:'base', nombre:'Base', x:50, y:80 },
+    { id:'escolta', nombre:'Escolta', x:22, y:58 },
+    { id:'alero', nombre:'Alero', x:78, y:45 },
+    { id:'ala_pivot', nombre:'Ala-pívot', x:30, y:22 },
+    { id:'pivot', nombre:'Pívot', x:50, y:8 },
+  ];
+
+  function catalogoPosiciones(deporteNombre){
+    if (deporteNombre === 'Baloncesto') return POSICIONES_BALONCESTO;
+    if (deporteNombre === 'Fútbol') return POSICIONES_FUTBOL;
+    return null;
+  }
+
+  function nombrePosicion(deporteNombre, id){
+    const catalogo = catalogoPosiciones(deporteNombre) || [];
+    return (catalogo.find(p => p.id === id) || {}).nombre || id;
+  }
+
+  // clave `${equipoId}-${deportistaId}` -> { dorsal, lateralidad, posicionPrincipal, posicionSecundaria, valoracion* }
+  let fichasTecnicas = {
+    '1-1': { dorsal:7, lateralidad:'derecho', posicionPrincipal:'lateral', posicionSecundaria:'', valoracionTecnica:7, valoracionTactica:6, valoracionFisica:7, valoracionPsicologica:6, valoracionPersonalidad:7 },
+    '1-4': { dorsal:10 },
+    '2-3': { dorsal:9, lateralidad:'zurdo' },
+    '3-2': { dorsal:5 },
+  };
+
+  // Borrador en memoria de la ficha técnica que se está editando ahora mismo
+  // (posición marcada en el esquema y foto elegida), por clave `${eqId}-${depId}`.
+  let borradorFicha = {};
+
+  function entrar(rol){
+    const nombresDemo = { administrador:'Sergio Blázquez', entrenador:'Ainhoa Ruiz', deportista:'R. Vidal' };
+    usuarioActual = { nombre: nombresDemo[rol] || 'Usuario demo', roles:[rol] };
+    document.getElementById('pantalla-login').classList.add('oculto');
+    document.getElementById('app-shell').classList.remove('oculto');
+    document.getElementById('nombre-usuario-actual').textContent = usuarioActual.nombre;
+    document.getElementById('rol-usuario-actual').textContent = NOMBRES_ROL[rol];
+
+    const puedeVerUsuarios = rol === 'administrador' || rol === 'direccion_deportiva';
+    const puedeVerDeportistas = rol === 'administrador' || rol === 'direccion_deportiva' || rol === 'entrenador';
+    const puedeVerEquipos = rol === 'administrador' || rol === 'direccion_deportiva' || rol === 'entrenador';
+    document.getElementById('nav-usuarios').style.display = puedeVerUsuarios ? '' : 'none';
+    document.getElementById('nav-deportistas').style.display = puedeVerDeportistas ? '' : 'none';
+    document.getElementById('nav-equipos').style.display = puedeVerEquipos ? '' : 'none';
+    document.getElementById('boton-nuevo-usuario').style.display = rol === 'administrador' ? '' : 'none';
+    document.getElementById('boton-nuevo-deportista').style.display = rol === 'administrador' ? '' : 'none';
+
+    const descInicio = {
+      administrador:'Resumen de todo el club',
+      entrenador:'Resumen de tus equipos',
+      deportista:'Tu semana'
+    };
+    document.getElementById('descripcion-inicio').textContent = descInicio[rol];
+
+    irA('inicio');
+  }
+
+  function salir(){
+    usuarioActual = null;
+    document.getElementById('app-shell').classList.add('oculto');
+    document.getElementById('pantalla-login').classList.remove('oculto');
+  }
+
+  function irA(vista){
+    const esAdminODireccion = usuarioActual.roles.includes('administrador') || usuarioActual.roles.includes('direccion_deportiva');
+    if (vista === 'usuarios' && !esAdminODireccion) vista = 'inicio';
+    if (vista === 'deportistas' && !(esAdminODireccion || usuarioActual.roles.includes('entrenador'))) vista = 'inicio';
+    if (vista === 'equipos' && !(esAdminODireccion || usuarioActual.roles.includes('entrenador'))) vista = 'inicio';
+    if (vista === 'equipos') equipoAbiertoId = null; // entrar por el menú siempre va al listado
+    if (vista === 'deportistas') deportistaAbiertoId = null;
+
+    vistaActual = vista;
+    document.getElementById('vista-inicio').classList.toggle('oculto', vista !== 'inicio');
+    document.getElementById('vista-deportistas').classList.toggle('oculto', vista !== 'deportistas');
+    document.getElementById('vista-equipos').classList.toggle('oculto', vista !== 'equipos');
+    document.getElementById('vista-usuarios').classList.toggle('oculto', vista !== 'usuarios');
+    document.getElementById('nav-inicio').classList.toggle('activo', vista === 'inicio');
+    document.getElementById('nav-deportistas').classList.toggle('activo', vista === 'deportistas');
+    document.getElementById('nav-equipos').classList.toggle('activo', vista === 'equipos');
+    document.getElementById('nav-usuarios').classList.toggle('activo', vista === 'usuarios');
+    if (vista === 'usuarios') renderizarUsuarios();
+    if (vista === 'deportistas') renderizarDeportistas();
+    if (vista === 'equipos') renderizarEquipos();
+  }
+
+  function alternarFormularioDeportista(){
+    const form = document.getElementById('formulario-deportista');
+    const abrir = form.classList.contains('oculto');
+    form.classList.toggle('oculto');
+    if (abrir) {
+      document.getElementById('dep-nombre').value = '';
+      document.getElementById('dep-apellidos').value = '';
+      document.getElementById('dep-nacimiento').value = '';
+    }
+  }
+
+  function crearDeportista(evento){
+    evento.preventDefault();
+    const nombre = document.getElementById('dep-nombre').value.trim();
+    const apellidos = document.getElementById('dep-apellidos').value.trim();
+    const fechaNacimiento = document.getElementById('dep-nacimiento').value;
+    if (!nombre || !apellidos || !fechaNacimiento) return;
+    deportistas.push({ id: siguienteIdDeportista++, nombre, apellidos, fechaNacimiento, numeroSocio:'', lesionado:false, lesionDetalle:'', inactivo:false, deportes:[], fotoDataUrl:'' });
+    document.getElementById('formulario-deportista').classList.add('oculto');
+    renderizarDeportistas();
+  }
+
+  function alternarLesionDeportista(id){
+    deportistas = deportistas.map(d => d.id === id ? {...d, lesionado: !d.lesionado} : d);
+    renderizarDeportistas();
+  }
+
+  function darDeBajaDeportista(id){
+    if (!confirm('¿Dar de baja a este deportista? No se borra ningún dato: podrá reactivarse más adelante manteniendo su número de socio e historial.')) return;
+    deportistas = deportistas.map(d => d.id === id ? {...d, inactivo:true} : d);
+    renderizarDeportistas();
+  }
+
+  function darDeAltaDeportista(id){
+    deportistas = deportistas.map(d => d.id === id ? {...d, inactivo:false} : d);
+    renderizarDeportistas();
+  }
+
+  function verDeportista(id){
+    deportistaAbiertoId = id;
+    renderizarDeportistas();
+  }
+
+  function volverDeportistas(){
+    deportistaAbiertoId = null;
+    renderizarDeportistas();
+  }
+
+  function renderizarDeportistas(){
+    const puedeGestionar = usuarioActual.roles.includes('administrador');
+    const puedeMarcarLesion = puedeGestionar || usuarioActual.roles.includes('direccion_deportiva') || usuarioActual.roles.includes('entrenador');
+
+    if (deportistaAbiertoId) {
+      document.getElementById('deportistas-lista-wrap').classList.add('oculto');
+      document.getElementById('deportistas-detalle').classList.remove('oculto');
+      renderizarDetalleDeportista();
+      return;
+    }
+    document.getElementById('deportistas-lista-wrap').classList.remove('oculto');
+    document.getElementById('deportistas-detalle').classList.add('oculto');
+
+    const selectDeporte = document.getElementById('filtro-dep-deporte');
+    if (selectDeporte.options.length <= 1) {
+      selectDeporte.innerHTML = '<option value="">Todos los deportes</option>' + DEPORTES.map(d => `<option value="${d.id}">${d.nombre}</option>`).join('');
+    }
+
+    const texto = document.getElementById('filtro-dep-texto').value.trim().toLowerCase();
+    const deporteId = document.getElementById('filtro-dep-deporte').value;
+    const estado = document.getElementById('filtro-dep-estado').value;
+
+    const filtrados = deportistas.filter(d => {
+      if (estado === 'activo' && d.inactivo) return false;
+      if (estado === 'inactivo' && !d.inactivo) return false;
+      if (texto && !`${d.nombre} ${d.apellidos} ${d.numeroSocio || ''}`.toLowerCase().includes(texto)) return false;
+      if (deporteId && !(d.deportes || []).includes(Number(deporteId))) return false;
+      return true;
+    });
+
+    document.getElementById('cuerpo-tabla-deportistas').innerHTML = filtrados.length === 0
+      ? `<tr><td colspan="7" style="color:var(--muted);">No hay deportistas que coincidan con estos filtros.</td></tr>`
+      : filtrados.map(d => `
+      <tr class="${d.inactivo ? 'inactivo-fila' : ''}">
+        <td>${d.nombre} ${d.apellidos}</td>
+        <td>${d.fechaNacimiento}</td>
+        <td>${d.numeroSocio || '—'}</td>
+        <td>${(d.deportes || []).length
+          ? d.deportes.map(id => `<span class="etiqueta-rol">${DEPORTES.find(dep => dep.id === id)?.nombre || ''}</span>`).join(' ')
+          : '<span style="color:var(--muted)">—</span>'}
+        </td>
+        <td>
+          ${puedeMarcarLesion
+            ? `<button class="btn btn-secundario" onclick="alternarLesionDeportista(${d.id})">${d.lesionado ? (d.lesionDetalle || 'Lesionado') : 'No'}</button>`
+            : (d.lesionado ? (d.lesionDetalle || 'Lesionado') : 'No')}
+        </td>
+        <td><span class="estado-pill ${d.inactivo ? 'estado-inactivo' : 'estado-activo'}">${d.inactivo ? 'Inactivo' : 'Activo'}</span></td>
+        <td>
+          <div class="acciones-usuario">
+            <button class="btn btn-secundario" onclick="verDeportista(${d.id})">Ver ficha</button>
+            ${puedeGestionar && !d.inactivo ? `<button class="btn btn-peligro-confirmar" onclick="darDeBajaDeportista(${d.id})">Dar de baja</button>` : ''}
+            ${puedeGestionar && d.inactivo ? `<button class="btn btn-secundario" onclick="darDeAltaDeportista(${d.id})">Dar de alta</button>` : ''}
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderizarDetalleDeportista(){
+    const d = deportistas.find(x => x.id === deportistaAbiertoId);
+    if (!d) { volverDeportistas(); return; }
+    const puedeGestionar = usuarioActual.roles.includes('administrador');
+
+    document.getElementById('detalle-dep-titulo').textContent = `${d.nombre} ${d.apellidos}${d.inactivo ? ' · Inactivo' : ''}`;
+    document.getElementById('detalle-dep-acciones').innerHTML = !puedeGestionar ? '' : (
+      d.inactivo
+        ? `<button class="btn btn-secundario" onclick="darDeAltaDeportista(${d.id})">Dar de alta</button>`
+        : `<button class="btn btn-peligro-confirmar" onclick="darDeBajaDeportista(${d.id})">Dar de baja</button>`
+    );
+
+    const foto = d.fotoDataUrl
+      ? `<img class="foto-jugador foto-jugador-grande" src="${d.fotoDataUrl}" alt="">`
+      : `<span class="foto-jugador foto-jugador-grande foto-jugador-vacia">${(d.nombre || '?')[0]}</span>`;
+
+    const formularioODatos = puedeGestionar ? `
+      <form class="tarjeta-form form-linea" style="margin:0;flex:1;min-width:240px;" onsubmit="guardarDatosDeportista(event, ${d.id})">
+        <div class="campo"><label>Nombre</label><input id="edit-dep-nombre" value="${d.nombre}" required></div>
+        <div class="campo"><label>Apellidos</label><input id="edit-dep-apellidos" value="${d.apellidos}" required></div>
+        <div class="campo"><label>Fecha de nacimiento</label><input id="edit-dep-nacimiento" type="date" value="${d.fechaNacimiento}" required></div>
+        <div class="campo"><label>Nº de socio</label><input id="edit-dep-socio" value="${d.numeroSocio || ''}"></div>
+        <button class="btn btn-primario" type="submit">Guardar cambios</button>
+      </form>
+    ` : `
+      <div style="flex:1;min-width:200px;">
+        <p style="margin:0 0 6px;"><strong>Nombre:</strong> ${d.nombre} ${d.apellidos}</p>
+        <p style="margin:0 0 6px;"><strong>Fecha de nacimiento:</strong> ${d.fechaNacimiento}</p>
+        <p style="margin:0;"><strong>Nº de socio:</strong> ${d.numeroSocio || '—'}</p>
+      </div>
+    `;
+
+    document.getElementById('detalle-dep-datos').innerHTML = `
+      <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex-shrink:0;">${foto}</div>
+        ${formularioODatos}
+      </div>
+    `;
+
+    const periodos = historialDeportes
+      .filter(h => h.deportistaId === d.id)
+      .sort((a, b) => (b.fechaAlta || '').localeCompare(a.fechaAlta || ''));
+
+    document.getElementById('cuerpo-tabla-historial').innerHTML = periodos.length === 0
+      ? `<tr><td colspan="4" style="color:var(--muted);">Todavía no hay historial de deportes.</td></tr>`
+      : periodos.map(h => {
+          const deporte = DEPORTES.find(dep => dep.id === h.deporteId);
+          const celdaAlta = puedeGestionar
+            ? `<input type="date" value="${h.fechaAlta}" style="max-width:150px;" onchange="actualizarHistorial(${h.id}, 'fechaAlta', this.value)">`
+            : h.fechaAlta;
+          const celdaBaja = h.fechaBaja
+            ? (puedeGestionar
+                ? `<input type="date" value="${h.fechaBaja}" style="max-width:150px;" onchange="actualizarHistorial(${h.id}, 'fechaBaja', this.value)">`
+                : h.fechaBaja)
+            : (puedeGestionar
+                ? `<button class="enlace-suave" onclick="cerrarPeriodoHistorial(${h.id})">dar de baja en este deporte</button>`
+                : '<span class="estado-pill estado-activo">Activo</span>');
+          return `
+            <tr>
+              <td>${deporte ? deporte.nombre : '—'}</td>
+              <td>${celdaAlta}</td>
+              <td>${celdaBaja}</td>
+              <td>${puedeGestionar ? `<button class="btn btn-peligro-confirmar" onclick="eliminarPeriodoHistorial(${h.id})">Eliminar</button>` : ''}</td>
+            </tr>
+          `;
+        }).join('');
+
+    document.getElementById('form-nuevo-periodo').style.display = puedeGestionar ? '' : 'none';
+    if (puedeGestionar) {
+      document.getElementById('select-nuevo-periodo-deporte').innerHTML = DEPORTES.map(dep => `<option value="${dep.id}">${dep.nombre}</option>`).join('');
+      const inputAlta = document.getElementById('input-nuevo-periodo-alta');
+      if (!inputAlta.value) inputAlta.value = new Date().toISOString().slice(0, 10);
+    }
+  }
+
+  function sincronizarDeportesDesdeHistorial(deportistaId){
+    const activos = historialDeportes.filter(h => h.deportistaId === deportistaId && !h.fechaBaja).map(h => h.deporteId);
+    deportistas = deportistas.map(d => d.id === deportistaId ? { ...d, deportes: activos } : d);
+  }
+
+  function anadirPeriodoHistorial(evento){
+    evento.preventDefault();
+    const deporteId = Number(document.getElementById('select-nuevo-periodo-deporte').value);
+    const fechaAlta = document.getElementById('input-nuevo-periodo-alta').value;
+    if (!deporteId || !fechaAlta) return;
+    const yaAbierto = historialDeportes.some(h => h.deportistaId === deportistaAbiertoId && h.deporteId === deporteId && !h.fechaBaja);
+    if (yaAbierto) { alert('Ya hay un periodo abierto para este deporte. Ciérralo antes de abrir uno nuevo.'); return; }
+    historialDeportes.push({ id: siguienteIdHistorial++, deportistaId: deportistaAbiertoId, deporteId, fechaAlta, fechaBaja: null });
+    sincronizarDeportesDesdeHistorial(deportistaAbiertoId);
+    document.getElementById('input-nuevo-periodo-alta').value = '';
+    renderizarDetalleDeportista();
+  }
+
+  function actualizarHistorial(historialId, campo, valor){
+    historialDeportes = historialDeportes.map(h => h.id === historialId ? { ...h, [campo]: valor || null } : h);
+    sincronizarDeportesDesdeHistorial(deportistaAbiertoId);
+    renderizarDetalleDeportista();
+  }
+
+  function cerrarPeriodoHistorial(historialId){
+    historialDeportes = historialDeportes.map(h => h.id === historialId ? { ...h, fechaBaja: new Date().toISOString().slice(0, 10) } : h);
+    sincronizarDeportesDesdeHistorial(deportistaAbiertoId);
+    renderizarDetalleDeportista();
+  }
+
+  function eliminarPeriodoHistorial(historialId){
+    if (!confirm('¿Eliminar este periodo del historial? Pensado solo para corregir un error al darlo de alta.')) return;
+    historialDeportes = historialDeportes.filter(h => h.id !== historialId);
+    sincronizarDeportesDesdeHistorial(deportistaAbiertoId);
+    renderizarDetalleDeportista();
+  }
+
+  function guardarDatosDeportista(evento, id){
+    evento.preventDefault();
+    const nombre = document.getElementById('edit-dep-nombre').value.trim();
+    const apellidos = document.getElementById('edit-dep-apellidos').value.trim();
+    const fechaNacimiento = document.getElementById('edit-dep-nacimiento').value;
+    const numeroSocio = document.getElementById('edit-dep-socio').value.trim();
+    if (!nombre || !apellidos || !fechaNacimiento) return;
+    deportistas = deportistas.map(d => d.id === id ? { ...d, nombre, apellidos, fechaNacimiento, numeroSocio } : d);
+    renderizarDetalleDeportista();
+  }
+
+  // ---------- equipos ----------
+
+  function mediaValoraciones(ficha){
+    const valores = [ficha.valoracionTecnica, ficha.valoracionTactica, ficha.valoracionFisica, ficha.valoracionPsicologica, ficha.valoracionPersonalidad]
+      .filter(v => v !== undefined && v !== null && v !== '');
+    if (!valores.length) return null;
+    return valores.reduce((a, b) => a + Number(b), 0) / valores.length;
+  }
+
+  function alternarFormularioEquipo(){
+    const form = document.getElementById('formulario-equipo');
+    const abrir = form.classList.contains('oculto');
+    form.classList.toggle('oculto');
+    if (abrir) {
+      document.getElementById('eq-nombre').value = '';
+      document.getElementById('eq-categoria').value = '';
+      document.getElementById('eq-deporte').innerHTML = DEPORTES.map(d => `<option value="${d.id}">${d.nombre}</option>`).join('');
+    }
+  }
+
+  function crearEquipo(evento){
+    evento.preventDefault();
+    const nombre = document.getElementById('eq-nombre').value.trim();
+    const deporteId = Number(document.getElementById('eq-deporte').value);
+    const categoria = document.getElementById('eq-categoria').value.trim();
+    if (!nombre || !deporteId) return;
+    equipos.push({ id: siguienteIdEquipo++, nombre, categoria, deporteId, inactivo:false, personal:[], deportistaIds:[] });
+    document.getElementById('formulario-equipo').classList.add('oculto');
+    renderizarEquipos();
+  }
+
+  function darDeBajaEquipo(id){
+    equipos = equipos.map(e => e.id === id ? { ...e, inactivo:true } : e);
+    renderizarEquipos();
+  }
+
+  function verEquipo(id){
+    equipoAbiertoId = id;
+    renderizarEquipos();
+  }
+
+  function volverEquipos(){
+    equipoAbiertoId = null;
+    renderizarEquipos();
+  }
+
+  function renderizarEquipos(){
+    const puedeGestionar = usuarioActual.roles.includes('administrador');
+    document.getElementById('boton-nuevo-equipo').style.display = puedeGestionar ? '' : 'none';
+
+    if (equipoAbiertoId) {
+      document.getElementById('equipos-lista-wrap').classList.add('oculto');
+      document.getElementById('equipos-detalle').classList.remove('oculto');
+      renderizarDetalleEquipo();
+      return;
+    }
+    document.getElementById('equipos-lista-wrap').classList.remove('oculto');
+    document.getElementById('equipos-detalle').classList.add('oculto');
+
+    document.getElementById('cuerpo-tabla-equipos').innerHTML = equipos.map(eq => {
+      const deporte = DEPORTES.find(d => d.id === eq.deporteId);
+      return `
+        <tr class="${eq.inactivo ? 'inactivo-fila' : ''}">
+          <td>${eq.nombre}${eq.categoria ? ` <span style="color:var(--muted)">(${eq.categoria})</span>` : ''}</td>
+          <td>${deporte ? deporte.nombre : '—'}</td>
+          <td>${eq.deportistaIds.length}</td>
+          <td><span class="estado-pill ${eq.inactivo ? 'estado-inactivo' : 'estado-activo'}">${eq.inactivo ? 'Inactivo' : 'Activo'}</span></td>
+          <td>
+            <div class="acciones-usuario">
+              <button class="btn btn-secundario" onclick="verEquipo(${eq.id})">Ver plantilla</button>
+              ${puedeGestionar && !eq.inactivo ? `<button class="btn btn-peligro-confirmar" onclick="darDeBajaEquipo(${eq.id})">Dar de baja</button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function renderizarDetalleEquipo(){
+    const eq = equipos.find(e => e.id === equipoAbiertoId);
+    if (!eq) { volverEquipos(); return; }
+    const puedeGestionar = usuarioActual.roles.includes('administrador');
+    const deporte = DEPORTES.find(d => d.id === eq.deporteId);
+
+    document.getElementById('detalle-equipo-titulo').textContent = `${eq.nombre} · ${deporte ? deporte.nombre : ''} · 2026/2027`;
+
+    document.getElementById('detalle-equipo-personal').innerHTML = eq.personal.length === 0
+      ? '<span style="color:var(--muted)">Sin personal asignado todavía.</span>'
+      : eq.personal.map(p => {
+          const usuario = usuarios.find(u => u.id === p.usuarioId);
+          return `<span class="etiqueta-rol" style="margin:0 6px 6px 0;display:inline-flex;align-items:center;gap:6px;">
+            ${usuario ? usuario.nombre : '—'} · ${p.rol}
+            ${puedeGestionar ? `<button class="enlace-suave" onclick="quitarPersonalEquipo(${eq.id}, ${p.usuarioId}, '${p.rol}')">quitar</button>` : ''}
+          </span>`;
+        }).join('');
+
+    document.getElementById('form-personal-equipo').style.display = puedeGestionar ? '' : 'none';
+    if (puedeGestionar) {
+      document.getElementById('select-personal-usuario').innerHTML = usuarios.filter(u => !u.inactivo).map(u => `<option value="${u.id}">${u.nombre}</option>`).join('');
+    }
+
+    document.getElementById('cuerpo-tabla-plantilla').innerHTML = eq.deportistaIds.length === 0
+      ? `<tr><td colspan="5" style="color:var(--muted);">Todavía no hay deportistas fichados por este equipo esta temporada.</td></tr>`
+      : eq.deportistaIds.map(depId => {
+          const d = deportistas.find(x => x.id === depId);
+          if (!d) return '';
+          const clave = `${eq.id}-${depId}`;
+          const ficha = fichasTecnicas[clave] || {};
+          const fotoCelda = d.fotoDataUrl
+            ? `<img class="foto-jugador" src="${d.fotoDataUrl}" alt="">`
+            : `<span class="foto-jugador foto-jugador-vacia">${(d.nombre || '?')[0]}</span>`;
+          return `
+            <tr>
+              <td>${puedeGestionar
+                ? `<input type="number" min="0" style="max-width:64px" value="${ficha.dorsal ?? ''}" onchange="guardarDorsal(${eq.id}, ${depId}, this.value)">`
+                : (ficha.dorsal ?? '—')}</td>
+              <td>
+                <span class="jugador-nombre-fila">
+                  ${fotoCelda}
+                  ${d.nombre} ${d.apellidos}${d.lesionado ? ' <span class="etiqueta-rol" style="background:var(--peligro-soft);color:var(--peligro);">lesionado</span>' : ''}
+                </span>
+              </td>
+              <td>${d.numeroSocio || '—'}</td>
+              <td>
+                ${resumenFicha(deporte ? deporte.nombre : '', ficha)}
+                <button class="enlace-suave" onclick="alternarFichaTecnica(${eq.id}, ${depId})">editar ficha</button>
+              </td>
+              ${puedeGestionar ? `<td><button class="btn btn-peligro-confirmar" onclick="quitarDeEquipo(${eq.id}, ${depId})">Quitar</button></td>` : '<td></td>'}
+            </tr>
+            <tr id="fila-ficha-${eq.id}-${depId}" class="oculto"><td colspan="5">${plantillaFormFichaTecnica(eq.id, depId, ficha)}</td></tr>
+          `;
+        }).join('');
+
+    const idsEnPlantilla = new Set(eq.deportistaIds);
+    const candidatos = deportistas.filter(d => !d.inactivo && !idsEnPlantilla.has(d.id));
+    document.getElementById('form-fichar-equipo').style.display = puedeGestionar ? '' : 'none';
+    document.getElementById('select-fichar-deportista').innerHTML = candidatos.length
+      ? candidatos.map(d => `<option value="${d.id}">${d.nombre} ${d.apellidos}</option>`).join('')
+      : '<option value="">No hay deportistas disponibles</option>';
+  }
+
+  function resumenFicha(deporteNombre, ficha){
+    const partes = [];
+    if (ficha.posicionPrincipal) {
+      partes.push(`<span class="etiqueta-rol">${nombrePosicion(deporteNombre, ficha.posicionPrincipal)}${ficha.posicionSecundaria ? ' / ' + nombrePosicion(deporteNombre, ficha.posicionSecundaria) : ''}</span>`);
+    }
+    const media = mediaValoraciones(ficha);
+    if (media !== null) partes.push(`<span class="etiqueta-rol">media ${media.toFixed(1)}</span>`);
+    return partes.length ? partes.join(' ') : '<span style="color:var(--muted)">Sin ficha técnica</span>';
+  }
+
+  function fondoCancha(tipoCancha){
+    if (tipoCancha === 'baloncesto') {
+      return '<rect x="2" y="2" width="96" height="96" rx="2"/><circle cx="50" cy="50" r="9"/><rect x="30" y="2" width="40" height="30"/><path d="M 30 32 A 20 20 0 0 0 70 32"/><path d="M 20 2 A 45 45 0 0 0 20 40"/><path d="M 80 2 A 45 45 0 0 1 80 40"/>';
+    }
+    return '<rect x="2" y="2" width="96" height="96" rx="2"/><line x1="2" y1="50" x2="98" y2="50"/><circle cx="50" cy="50" r="9"/><rect x="25" y="2" width="50" height="14"/><rect x="25" y="84" width="50" height="14"/><rect x="38" y="2" width="24" height="6"/><rect x="38" y="92" width="24" height="6"/>';
+  }
+
+  function svgEsquemaPosiciones(deporteNombre, clave){
+    const posiciones = catalogoPosiciones(deporteNombre);
+    if (!posiciones) return '';
+    const tipoCancha = deporteNombre === 'Baloncesto' ? 'baloncesto' : 'futbol';
+    const draft = borradorFicha[clave] || {};
+    const marcadores = posiciones.map(p => {
+      const estado = p.id === draft.posicionPrincipal ? 'principal' : (p.id === draft.posicionSecundaria ? 'secundaria' : '');
+      return `<g class="marcador-posicion ${estado}" transform="translate(${p.x}, ${p.y})" onclick="clicPosicionEsquema('${clave}', '${p.id}')">
+        <circle r="6.5"></circle>
+        <text y="2">${p.nombre.slice(0, 3).toUpperCase()}</text>
+      </g>`;
+    }).join('');
+    return `<svg viewBox="0 0 100 100" class="esquema-posiciones esquema-${tipoCancha}">
+      <g class="fondo-cancha">${fondoCancha(tipoCancha)}</g>
+      ${marcadores}
+    </svg>`;
+  }
+
+  function textoPosicionActual(deporteNombre, draft){
+    if (!draft.posicionPrincipal) return 'Toca una posición del esquema para marcarla como principal.';
+    let texto = `Principal: <strong>${nombrePosicion(deporteNombre, draft.posicionPrincipal)}</strong>`;
+    if (draft.posicionSecundaria) texto += ` · Secundaria: <strong>${nombrePosicion(deporteNombre, draft.posicionSecundaria)}</strong>`;
+    return texto;
+  }
+
+  function clicPosicionEsquema(clave, posId){
+    const draft = borradorFicha[clave];
+    if (!draft) return;
+    if (draft.posicionPrincipal === posId) {
+      draft.posicionPrincipal = draft.posicionSecundaria;
+      draft.posicionSecundaria = '';
+    } else if (draft.posicionSecundaria === posId) {
+      draft.posicionSecundaria = '';
+    } else if (!draft.posicionPrincipal) {
+      draft.posicionPrincipal = posId;
+    } else {
+      draft.posicionSecundaria = posId;
+    }
+    const [eqId] = clave.split('-').map(Number);
+    const eq = equipos.find(e => e.id === eqId);
+    const deporte = eq ? DEPORTES.find(d => d.id === eq.deporteId) : null;
+    const deporteNombre = deporte ? deporte.nombre : '';
+    document.getElementById(`esquema-${clave}`).innerHTML = svgEsquemaPosiciones(deporteNombre, clave);
+    document.getElementById(`texto-posicion-${clave}`).innerHTML = textoPosicionActual(deporteNombre, draft);
+  }
+
+  function subirFotoDraft(clave, input){
+    const archivo = input.files && input.files[0];
+    input.value = '';
+    if (!archivo) return;
+    const lector = new FileReader();
+    lector.onload = () => {
+      borradorFicha[clave] = { ...(borradorFicha[clave] || {}), fotoDataUrl: lector.result };
+      const previo = document.getElementById(`foto-preview-${clave}`);
+      if (previo) previo.outerHTML = `<img class="foto-jugador foto-jugador-grande" id="foto-preview-${clave}" src="${lector.result}" alt="">`;
+    };
+    lector.readAsDataURL(archivo);
+  }
+
+  function plantillaFormFichaTecnica(eqId, depId, ficha){
+    const eq = equipos.find(e => e.id === eqId);
+    const deporte = eq ? DEPORTES.find(d => d.id === eq.deporteId) : null;
+    const deporteNombre = deporte ? deporte.nombre : '';
+    const clave = `${eqId}-${depId}`;
+    const jugador = deportistas.find(x => x.id === depId) || {};
+    if (!borradorFicha[clave]) {
+      borradorFicha[clave] = {
+        posicionPrincipal: ficha.posicionPrincipal || '',
+        posicionSecundaria: ficha.posicionSecundaria || '',
+        fotoDataUrl: jugador.fotoDataUrl || '',
+      };
+    }
+    const draft = borradorFicha[clave];
+    const catalogo = catalogoPosiciones(deporteNombre);
+    const campos = ['Tecnica', 'Tactica', 'Fisica', 'Psicologica', 'Personalidad'];
+    const fotoHtml = draft.fotoDataUrl
+      ? `<img class="foto-jugador foto-jugador-grande" id="foto-preview-${clave}" src="${draft.fotoDataUrl}" alt="">`
+      : `<span class="foto-jugador foto-jugador-grande foto-jugador-vacia" id="foto-preview-${clave}">${(jugador.nombre || '?')[0]}</span>`;
+    return `
+      <div class="tarjeta-form" style="margin:10px 0;max-width:720px;">
+        <h3>Ficha técnica</h3>
+        <div class="ficha-tecnica-cabecera">
+          <div class="foto-subida">
+            ${fotoHtml}
+            <label class="enlace-suave">Cambiar foto
+              <input type="file" accept="image/*" style="display:none;" onchange="subirFotoDraft('${clave}', this)">
+            </label>
+          </div>
+          ${catalogo ? `
+            <div class="esquema-posiciones-envoltorio">
+              <div id="esquema-${clave}">${svgEsquemaPosiciones(deporteNombre, clave)}</div>
+              <p id="texto-posicion-${clave}" style="font-size:12.5px;color:var(--muted);margin:6px 0 0;">${textoPosicionActual(deporteNombre, draft)}</p>
+            </div>
+          ` : ''}
+        </div>
+        <div class="campo">
+          <label>Lateralidad</label>
+          <select id="ficha-lat-${clave}">
+            <option value="" ${!ficha.lateralidad ? 'selected' : ''}>Sin indicar</option>
+            <option value="derecho" ${ficha.lateralidad === 'derecho' ? 'selected' : ''}>Derecho</option>
+            <option value="zurdo" ${ficha.lateralidad === 'zurdo' ? 'selected' : ''}>Zurdo</option>
+            <option value="ambidiestro" ${ficha.lateralidad === 'ambidiestro' ? 'selected' : ''}>Ambidiestro</option>
+          </select>
+        </div>
+        <div class="roles-checks" style="gap:10px 16px;">
+          ${campos.map(campo => `
+            <div class="campo" style="min-width:110px;">
+              <label>${campo} (0-10)</label>
+              <input id="ficha-${campo.toLowerCase()}-${clave}" type="number" min="0" max="10" step="0.5" value="${ficha['valoracion' + campo] ?? ''}">
+            </div>
+          `).join('')}
+        </div>
+        <button type="button" class="btn btn-primario" onclick="guardarFichaTecnica(${eqId}, ${depId})">Guardar ficha técnica</button>
+      </div>
+    `;
+  }
+
+  function alternarFichaTecnica(eqId, depId){
+    document.getElementById(`fila-ficha-${eqId}-${depId}`).classList.toggle('oculto');
+  }
+
+  function guardarFichaTecnica(eqId, depId){
+    const clave = `${eqId}-${depId}`;
+    const leer = id => document.getElementById(id).value;
+    const num = v => v === '' ? undefined : Number(v);
+    const draft = borradorFicha[clave] || {};
+    fichasTecnicas[clave] = {
+      ...(fichasTecnicas[clave] || {}),
+      lateralidad: leer(`ficha-lat-${clave}`) || undefined,
+      posicionPrincipal: draft.posicionPrincipal || undefined,
+      posicionSecundaria: draft.posicionSecundaria || undefined,
+      valoracionTecnica: num(leer(`ficha-tecnica-${clave}`)),
+      valoracionTactica: num(leer(`ficha-tactica-${clave}`)),
+      valoracionFisica: num(leer(`ficha-fisica-${clave}`)),
+      valoracionPsicologica: num(leer(`ficha-psicologica-${clave}`)),
+      valoracionPersonalidad: num(leer(`ficha-personalidad-${clave}`)),
+    };
+    if (draft.fotoDataUrl) {
+      deportistas = deportistas.map(d => d.id === depId ? { ...d, fotoDataUrl: draft.fotoDataUrl } : d);
+    }
+    delete borradorFicha[clave];
+    renderizarDetalleEquipo();
+  }
+
+  function asignarPersonalEquipo(evento, eqId){
+    evento.preventDefault();
+    const usuarioId = Number(document.getElementById('select-personal-usuario').value);
+    const rol = document.getElementById('select-personal-rol').value;
+    if (!usuarioId) return;
+    equipos = equipos.map(e => e.id === eqId
+      ? { ...e, personal: [...e.personal.filter(p => !(p.usuarioId === usuarioId && p.rol === rol)), { usuarioId, rol }] }
+      : e);
+    renderizarDetalleEquipo();
+  }
+
+  function quitarPersonalEquipo(eqId, usuarioId, rol){
+    equipos = equipos.map(e => e.id === eqId ? { ...e, personal: e.personal.filter(p => !(p.usuarioId === usuarioId && p.rol === rol)) } : e);
+    renderizarDetalleEquipo();
+  }
+
+  function ficharDeportistaEquipo(evento, eqId){
+    evento.preventDefault();
+    const depId = Number(document.getElementById('select-fichar-deportista').value);
+    if (!depId) return;
+    const dorsalInput = document.getElementById('input-fichar-dorsal');
+    const dorsal = dorsalInput.value;
+    equipos = equipos.map(e => e.id === eqId ? { ...e, deportistaIds: [...e.deportistaIds, depId] } : e);
+    if (dorsal) fichasTecnicas[`${eqId}-${depId}`] = { ...(fichasTecnicas[`${eqId}-${depId}`] || {}), dorsal: Number(dorsal) };
+    dorsalInput.value = '';
+    renderizarDetalleEquipo();
+  }
+
+  function quitarDeEquipo(eqId, depId){
+    if (!confirm('¿Quitar a este deportista del equipo esta temporada?')) return;
+    equipos = equipos.map(e => e.id === eqId ? { ...e, deportistaIds: e.deportistaIds.filter(id => id !== depId) } : e);
+    renderizarDetalleEquipo();
+  }
+
+  function guardarDorsal(eqId, depId, valor){
+    const clave = `${eqId}-${depId}`;
+    fichasTecnicas[clave] = { ...(fichasTecnicas[clave] || {}), dorsal: valor === '' ? undefined : Number(valor) };
+  }
+
+  function alternarFormulario(){
+    const form = document.getElementById('formulario-usuario');
+    const abrir = form.classList.contains('oculto');
+    form.classList.toggle('oculto');
+    if (abrir) {
+      document.getElementById('nuevo-nombre').value = '';
+      document.getElementById('nuevo-email').value = '';
+      document.getElementById('roles-nuevo-usuario').innerHTML = ROLES.map(r =>
+        `<label><input type="checkbox" value="${r}"> ${NOMBRES_ROL[r]}</label>`
+      ).join('');
+    }
+  }
+
+  function crearUsuario(evento){
+    evento.preventDefault();
+    const nombre = document.getElementById('nuevo-nombre').value.trim();
+    const email = document.getElementById('nuevo-email').value.trim();
+    const rolesElegidos = [...document.querySelectorAll('#roles-nuevo-usuario input:checked')].map(i => i.value);
+    if (!nombre || rolesElegidos.length === 0) return;
+    usuarios.push({ id: siguienteId++, nombre, email, roles: rolesElegidos, inactivo:false, editando:false });
+    document.getElementById('formulario-usuario').classList.add('oculto');
+    renderizarUsuarios();
+  }
+
+  function alternarEdicion(id){
+    usuarios = usuarios.map(u => u.id === id ? {...u, editando: !u.editando} : u);
+    renderizarUsuarios();
+  }
+
+  function alternarRolEnEdicion(id, rol){
+    usuarios = usuarios.map(u => {
+      if (u.id !== id) return u;
+      const tiene = u.roles.includes(rol);
+      return { ...u, roles: tiene ? u.roles.filter(r => r !== rol) : [...u.roles, rol] };
+    });
+    renderizarUsuarios();
+  }
+
+  function darDeBaja(id){
+    usuarios = usuarios.map(u => u.id === id ? {...u, inactivo:true} : u);
+    renderizarUsuarios();
+  }
+
+  function renderizarUsuarios(){
+    const esAdmin = usuarioActual && usuarioActual.roles.includes('administrador');
+    document.getElementById('cuerpo-tabla-usuarios').innerHTML = usuarios.map(u => `
+      <tr class="${u.inactivo ? 'inactivo-fila' : ''}">
+        <td>${u.nombre}</td>
+        <td>${u.email || '—'}</td>
+        <td>
+          ${u.editando ? `
+            <div class="roles-checks">
+              ${ROLES.map(r => `<label><input type="checkbox" ${u.roles.includes(r) ? 'checked' : ''} onchange="alternarRolEnEdicion(${u.id}, '${r}')"> ${NOMBRES_ROL[r]}</label>`).join('')}
+            </div>
+          ` : `
+            <div class="etiquetas-roles">${u.roles.map(r => `<span class="etiqueta-rol">${NOMBRES_ROL[r]}</span>`).join('')}</div>
+          `}
+        </td>
+        <td><span class="estado-pill ${u.inactivo ? 'estado-inactivo' : 'estado-activo'}">${u.inactivo ? 'Inactivo' : 'Activo'}</span></td>
+        <td>
+          ${esAdmin ? `
+            <div class="acciones-usuario">
+              <button class="btn btn-secundario" onclick="alternarEdicion(${u.id})">${u.editando ? 'Listo' : 'Editar roles'}</button>
+              ${!u.inactivo ? `<button class="btn btn-peligro-confirmar" onclick="darDeBaja(${u.id})">Dar de baja</button>` : ''}
+            </div>
+          ` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+</script>
