@@ -25,6 +25,7 @@ function filaACuota(fila) {
     otrosImportes: Number(fila.otros_importes),
     descuentoCuotaPct: Number(fila.descuento_cuota_pct),
     descuentoRopaPct: Number(fila.descuento_ropa_pct),
+    concepto: fila.concepto,
     notas: fila.notas,
     totalAPagar: fila.total_a_pagar !== undefined ? Number(fila.total_a_pagar) : undefined,
     totalPagado: fila.total_pagado !== undefined ? Number(fila.total_pagado) : undefined,
@@ -177,24 +178,31 @@ router.get('/:id', autenticar, requiereRol(...ACCESO_TOTAL_LECTURA), async (req,
   }
 });
 
-// POST /api/cuotas - crear la cuota de un deportista en un deporte/temporada.
+// POST /api/cuotas - crear una cuota de un deportista en un deporte/temporada.
+// Un mismo deportista puede tener varias cuotas del mismo deporte y
+// temporada siempre que tengan un "concepto" distinto (ej. "Septiembre",
+// "Segundo trimestre", "Liga de pádel") - así se pueden ir dando de alta
+// cargos sueltos en vez de una única cuota anual.
 router.post('/', autenticar, requiereRol('administrador'), async (req, res) => {
   const {
-    deportistaId, deporteId, temporadaId,
+    deportistaId, deporteId, temporadaId, concepto,
     importeCuota, importeRopa, otrosImportes,
     descuentoCuotaPct, descuentoRopaPct, notas,
   } = req.body;
   if (!deportistaId || !deporteId || !temporadaId) {
     return res.status(400).json({ error: 'deportistaId, deporteId y temporadaId son obligatorios' });
   }
+  if (!concepto || !concepto.trim()) {
+    return res.status(400).json({ error: 'concepto es obligatorio (ej: Septiembre, Segundo trimestre, Liga de pádel)' });
+  }
   try {
     const { rows } = await pool.query(
-      `INSERT INTO cuotas (deportista_id, deporte_id, temporada_id, importe_cuota, importe_ropa,
+      `INSERT INTO cuotas (deportista_id, deporte_id, temporada_id, concepto, importe_cuota, importe_ropa,
                             otros_importes, descuento_cuota_pct, descuento_ropa_pct, notas)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
-        deportistaId, deporteId, temporadaId,
+        deportistaId, deporteId, temporadaId, concepto.trim(),
         importeCuota || 0, importeRopa || 0, otrosImportes || 0,
         descuentoCuotaPct || 0, descuentoRopaPct || 0, notas || null,
       ]
@@ -202,7 +210,7 @@ router.post('/', autenticar, requiereRol('administrador'), async (req, res) => {
     res.status(201).json({ id: rows[0].id });
   } catch (err) {
     if (err.code === '23505') {
-      return res.status(409).json({ error: 'Este deportista ya tiene una cuota para ese deporte y temporada' });
+      return res.status(409).json({ error: 'Este deportista ya tiene una cuota con ese mismo concepto para ese deporte y temporada' });
     }
     console.error(err);
     res.status(500).json({ error: 'Error al crear la cuota' });
@@ -211,33 +219,39 @@ router.post('/', autenticar, requiereRol('administrador'), async (req, res) => {
 
 // POST /api/cuotas/grupal - edición/creación grupal: aplica el mismo
 // importe/descuento a varios deportistas de un deporte y temporada a la
-// vez (ej: "toda la plantilla del Cadete paga 30€/mes este año"). Si ya
-// tenían cuota se actualiza; si no, se crea.
+// vez, bajo un mismo "concepto" (ej: "toda la plantilla del Cadete paga
+// 30€/mes de Septiembre"). Si alguno ya tenía cuota con ese mismo
+// concepto se actualiza; si no, se crea una nueva. Usar un concepto
+// distinto (ej. "Liga de pádel") crea cuotas nuevas sin tocar las que ya
+// existían con otros conceptos.
 router.post('/grupal', autenticar, requiereRol('administrador'), async (req, res) => {
   const {
-    deportistaIds, deporteId, temporadaId,
+    deportistaIds, deporteId, temporadaId, concepto,
     importeCuota, importeRopa, otrosImportes,
     descuentoCuotaPct, descuentoRopaPct,
   } = req.body;
   if (!Array.isArray(deportistaIds) || deportistaIds.length === 0 || !deporteId || !temporadaId) {
     return res.status(400).json({ error: 'deportistaIds (no vacío), deporteId y temporadaId son obligatorios' });
   }
+  if (!concepto || !concepto.trim()) {
+    return res.status(400).json({ error: 'concepto es obligatorio (ej: Septiembre, Segundo trimestre, Liga de pádel)' });
+  }
   const cliente = await pool.connect();
   try {
     await cliente.query('BEGIN');
     for (const deportistaId of deportistaIds) {
       await cliente.query(
-        `INSERT INTO cuotas (deportista_id, deporte_id, temporada_id, importe_cuota, importe_ropa,
+        `INSERT INTO cuotas (deportista_id, deporte_id, temporada_id, concepto, importe_cuota, importe_ropa,
                               otros_importes, descuento_cuota_pct, descuento_ropa_pct)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (deportista_id, deporte_id, temporada_id) DO UPDATE SET
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (deportista_id, deporte_id, temporada_id, concepto) DO UPDATE SET
            importe_cuota = EXCLUDED.importe_cuota,
            importe_ropa = EXCLUDED.importe_ropa,
            otros_importes = EXCLUDED.otros_importes,
            descuento_cuota_pct = EXCLUDED.descuento_cuota_pct,
            descuento_ropa_pct = EXCLUDED.descuento_ropa_pct`,
         [
-          deportistaId, deporteId, temporadaId,
+          deportistaId, deporteId, temporadaId, concepto.trim(),
           importeCuota || 0, importeRopa || 0, otrosImportes || 0,
           descuentoCuotaPct || 0, descuentoRopaPct || 0,
         ]
@@ -254,12 +268,15 @@ router.post('/grupal', autenticar, requiereRol('administrador'), async (req, res
   }
 });
 
-// PUT /api/cuotas/:id - editar importes/descuentos/notas de una cuota.
+// PUT /api/cuotas/:id - editar importes/descuentos/concepto/notas de una cuota.
 router.put('/:id', autenticar, requiereRol('administrador'), async (req, res) => {
   const {
     importeCuota, importeRopa, otrosImportes,
-    descuentoCuotaPct, descuentoRopaPct, notas,
+    descuentoCuotaPct, descuentoRopaPct, concepto, notas,
   } = req.body;
+  if (concepto !== undefined && !concepto.trim()) {
+    return res.status(400).json({ error: 'El concepto no puede quedar vacío' });
+  }
   try {
     const { rows } = await pool.query(
       `UPDATE cuotas SET
@@ -268,14 +285,18 @@ router.put('/:id', autenticar, requiereRol('administrador'), async (req, res) =>
          otros_importes = COALESCE($3, otros_importes),
          descuento_cuota_pct = COALESCE($4, descuento_cuota_pct),
          descuento_ropa_pct = COALESCE($5, descuento_ropa_pct),
-         notas = COALESCE($6, notas)
-       WHERE id = $7
+         concepto = COALESCE($6, concepto),
+         notas = COALESCE($7, notas)
+       WHERE id = $8
        RETURNING id`,
-      [importeCuota, importeRopa, otrosImportes, descuentoCuotaPct, descuentoRopaPct, notas, req.params.id]
+      [importeCuota, importeRopa, otrosImportes, descuentoCuotaPct, descuentoRopaPct, concepto, notas, req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Cuota no encontrada' });
     res.json({ ok: true });
   } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Ya existe otra cuota de ese deporte y temporada con ese mismo concepto' });
+    }
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar la cuota' });
   }

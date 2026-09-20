@@ -30,6 +30,8 @@ function filaAPartido(fila) {
     rival: fila.rival,
     localVisitante: fila.local_visitante,
     competicion: fila.competicion,
+    competicionId: fila.competicion_id,
+    competicionNombre: fila.competicion_nombre,
     jornada: fila.jornada,
     resultadoPropio: fila.resultado_propio,
     resultadoRival: fila.resultado_rival,
@@ -151,7 +153,9 @@ router.get('/', autenticar, async (req, res) => {
   }
   try {
     const { rows } = await pool.query(
-      `SELECT p.* FROM partidos p WHERE ${condiciones.join(' AND ')} ORDER BY p.fecha DESC, p.hora DESC NULLS LAST`,
+      `SELECT p.*, c.nombre AS competicion_nombre FROM partidos p
+       LEFT JOIN competiciones c ON c.id = p.competicion_id
+       WHERE ${condiciones.join(' AND ')} ORDER BY p.fecha DESC, p.hora DESC NULLS LAST`,
       parametros
     );
     res.json(rows.map(filaAPartido));
@@ -543,7 +547,7 @@ router.post('/', autenticar, async (req, res) => {
   const { roles, id: usuarioId } = req.usuario;
   const {
     equipoId, temporadaId, fecha, hora, rival, localVisitante,
-    competicion, jornada, resultadoPropio, resultadoRival, notas,
+    competicion, competicionId, jornada, resultadoPropio, resultadoRival, notas,
   } = req.body;
   if (!equipoId || !temporadaId || !fecha || !rival) {
     return res.status(400).json({ error: 'equipoId, temporadaId, fecha y rival son obligatorios' });
@@ -557,12 +561,12 @@ router.post('/', autenticar, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `INSERT INTO partidos (equipo_id, temporada_id, fecha, hora, rival, local_visitante,
-                              competicion, jornada, resultado_propio, resultado_rival, jugado, notas, creado_por)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                              competicion, competicion_id, jornada, resultado_propio, resultado_rival, jugado, notas, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id`,
       [
         equipoId, temporadaId, fecha, hora || null, rival, localVisitante || 'local',
-        competicion || null, jornada || null,
+        competicion || null, competicionId || null, jornada || null,
         resultadoPropio ?? null, resultadoRival ?? null, jugado, notas || null, usuarioId,
       ]
     );

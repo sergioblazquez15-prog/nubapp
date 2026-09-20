@@ -16,6 +16,7 @@ const inicioRouter = require('./routes/inicio');
 const ejerciciosRouter = require('./routes/ejercicios');
 const planificacionesRouter = require('./routes/planificaciones');
 const metodologiaRouter = require('./routes/metodologia');
+const competicionesRouter = require('./routes/competiciones');
 
 const app = express();
 app.use(cors());
@@ -37,6 +38,7 @@ app.use('/api/inicio', inicioRouter);
 app.use('/api/ejercicios', ejerciciosRouter);
 app.use('/api/planificaciones', planificacionesRouter);
 app.use('/api/metodologia', metodologiaRouter);
+app.use('/api/competiciones', competicionesRouter);
 
 app.get('/api/salud', (req, res) => res.json({ estado: 'ok' }));
 
