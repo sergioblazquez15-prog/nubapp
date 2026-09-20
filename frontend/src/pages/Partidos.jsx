@@ -337,6 +337,10 @@ function ImportarCalendarioRFFM({ equipos, equipoInicialId, temporadaId, onImpor
       <p className="nota">
         Pega el enlace del calendario de un equipo en la web de la RFFM (competicion/calendario?...) y se
         crearán/actualizarán automáticamente sus partidos, con fecha, rival y escudo si la RFFM lo trae.
+        Importante: en rffm.es, dentro de "Calendario", primero elige Temporada, Tipo de juego, Competición
+        y Grupo y pulsa "BUSCAR" — solo entonces la URL de la barra de direcciones lleva los partidos (termina
+        en algo como "?temporada=...&amp;tipojuego=...&amp;competicion=...&amp;grupo=..."). El enlace genérico de
+        "Calendario" sin esos datos rellenados no sirve.
       </p>
       <label>
         Equipo
