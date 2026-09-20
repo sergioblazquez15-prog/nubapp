@@ -4,6 +4,8 @@ import Inicio from './pages/Inicio';
 import Usuarios from './pages/Usuarios';
 import Deportistas from './pages/Deportistas';
 import Equipos from './pages/Equipos';
+import Partidos from './pages/Partidos';
+import Directo from './pages/Directo';
 import Cuotas from './pages/Cuotas';
 import Ejercicios from './pages/Ejercicios';
 import Metodologia from './pages/Metodologia';
@@ -28,6 +30,18 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+
+      {/* Directo a pantalla completa: fuera del layout con menú a
+          propósito (como Login), para que ocupe toda la pantalla sin la
+          cabecera de navegación por encima. */}
+      <Route
+        path="/partidos/:id/directo"
+        element={
+          <RutaProtegida roles={PERSONAL_TECNICO}>
+            <Directo />
+          </RutaProtegida>
+        }
+      />
 
       <Route
         element={
@@ -58,6 +72,14 @@ export default function App() {
           element={
             <RutaProtegida roles={PERSONAL_TECNICO}>
               <Equipos />
+            </RutaProtegida>
+          }
+        />
+        <Route
+          path="/partidos"
+          element={
+            <RutaProtegida roles={PERSONAL_TECNICO}>
+              <Partidos />
             </RutaProtegida>
           }
         />

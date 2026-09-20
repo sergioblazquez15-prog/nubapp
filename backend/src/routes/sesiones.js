@@ -22,6 +22,9 @@ function filaASesion(fila) {
     titulo: fila.titulo,
     cancelada: fila.cancelada,
     motivoCancelacion: fila.motivo_cancelacion,
+    esRecuperacion: fila.es_recuperacion,
+    soloDeportistaId: fila.solo_deportista_id,
+    recuperaSesionId: fila.recupera_sesion_id,
   };
 }
 
@@ -100,6 +103,7 @@ router.get('/resumen-asistencia', autenticar, async (req, res) => {
        FROM deportista_equipo_temporada det
        JOIN deportistas d ON d.id = det.deportista_id
        JOIN sesiones s ON s.equipo_id = det.equipo_id AND s.temporada_id = det.temporada_id AND s.cancelada = FALSE
+         AND (s.solo_deportista_id IS NULL OR s.solo_deportista_id = d.id)
        LEFT JOIN asistencia a ON a.sesion_id = s.id AND a.deportista_id = d.id
        WHERE det.equipo_id = $1 AND det.temporada_id = $2
        GROUP BY d.id, d.nombre, d.apellidos
@@ -120,20 +124,37 @@ router.get('/resumen-asistencia', autenticar, async (req, res) => {
   }
 });
 
-// POST /api/sesiones - crear sesión (fecha/hora/título).
+// POST /api/sesiones - crear sesión (fecha/hora/título), o una sesión de
+// recuperación individual si se manda esRecuperacion + soloDeportistaId
+// (opcionalmente enlazada a la sesión de grupo que se recupera, vía
+// recuperaSesionId, para que quede constancia de cuál era).
 router.post('/', autenticar, async (req, res) => {
-  const { equipoId, temporadaId, fecha, horaInicio, titulo } = req.body;
+  const {
+    equipoId, temporadaId, fecha, horaInicio, titulo,
+    cancelada, motivoCancelacion,
+    esRecuperacion, soloDeportistaId, recuperaSesionId,
+  } = req.body;
   if (!equipoId || !temporadaId || !fecha) {
     return res.status(400).json({ error: 'equipoId, temporadaId y fecha son obligatorios' });
+  }
+  if (esRecuperacion && !soloDeportistaId) {
+    return res.status(400).json({ error: 'Una sesión de recuperación necesita el deportista al que pertenece' });
   }
   if (!(await puedeGestionarEquipo(req, equipoId))) {
     return res.status(403).json({ error: 'No tienes permiso para esto' });
   }
   try {
     const { rows } = await pool.query(
-      `INSERT INTO sesiones (equipo_id, temporada_id, fecha, hora_inicio, titulo, creado_por)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [equipoId, temporadaId, fecha, horaInicio || null, titulo || null, req.usuario.id]
+      `INSERT INTO sesiones (
+         equipo_id, temporada_id, fecha, hora_inicio, titulo, creado_por,
+         cancelada, motivo_cancelacion, es_recuperacion, solo_deportista_id, recupera_sesion_id
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+      [
+        equipoId, temporadaId, fecha, horaInicio || null, titulo || null, req.usuario.id,
+        cancelada || false, motivoCancelacion || null,
+        esRecuperacion || false, soloDeportistaId || null, recuperaSesionId || null,
+      ]
     );
     res.status(201).json({ id: rows[0].id });
   } catch (err) {
@@ -187,7 +208,8 @@ router.delete('/:id', autenticar, async (req, res) => {
 });
 
 // GET /api/sesiones/:id/asistencia - asistencia de TODA la plantilla del
-// equipo de esa sesión (con o sin fila de asistencia todavía).
+// equipo de esa sesión (con o sin fila de asistencia todavía) — salvo que
+// sea una sesión de recuperación, que solo es de un deportista concreto.
 router.get('/:id/asistencia', autenticar, async (req, res) => {
   try {
     const { rows: sesion } = await pool.query('SELECT * FROM sesiones WHERE id = $1', [req.params.id]);
@@ -195,20 +217,79 @@ router.get('/:id/asistencia', autenticar, async (req, res) => {
     if (!(await puedeVerEquipo(req, sesion[0].equipo_id))) {
       return res.status(403).json({ error: 'No tienes permiso para esto' });
     }
-    const { rows } = await pool.query(
-      `SELECT d.id AS deportista_id, d.nombre, d.apellidos,
-              a.asistio, a.justificada, a.confirmacion_previa
-       FROM deportista_equipo_temporada det
-       JOIN deportistas d ON d.id = det.deportista_id
-       LEFT JOIN asistencia a ON a.sesion_id = $1 AND a.deportista_id = d.id
-       WHERE det.equipo_id = $2 AND det.temporada_id = $3
-       ORDER BY d.apellidos, d.nombre`,
-      [req.params.id, sesion[0].equipo_id, sesion[0].temporada_id]
-    );
+    const { rows } = sesion[0].solo_deportista_id
+      ? await pool.query(
+          `SELECT d.id AS deportista_id, d.nombre, d.apellidos,
+                  a.asistio, a.justificada, a.confirmacion_previa
+           FROM deportistas d
+           LEFT JOIN asistencia a ON a.sesion_id = $1 AND a.deportista_id = d.id
+           WHERE d.id = $2`,
+          [req.params.id, sesion[0].solo_deportista_id]
+        )
+      : await pool.query(
+          `SELECT d.id AS deportista_id, d.nombre, d.apellidos,
+                  a.asistio, a.justificada, a.confirmacion_previa
+           FROM deportista_equipo_temporada det
+           JOIN deportistas d ON d.id = det.deportista_id
+           LEFT JOIN asistencia a ON a.sesion_id = $1 AND a.deportista_id = d.id
+           WHERE det.equipo_id = $2 AND det.temporada_id = $3
+           ORDER BY d.apellidos, d.nombre`,
+          [req.params.id, sesion[0].equipo_id, sesion[0].temporada_id]
+        );
     res.json({ sesion: filaASesion(sesion[0]), asistencia: rows.map(filaAAsistencia) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al consultar la asistencia' });
+  }
+});
+
+// GET /api/sesiones/calendario?deportistaId=&desde=&hasta= - todas las
+// sesiones relevantes para UN deportista en un rango de fechas: las de
+// grupo de cualquier equipo en el que esté fichado, más sus sesiones de
+// recuperación individuales. Pensado para "Mi calendario" en su ficha,
+// distinguiendo clase habitual (es_recuperacion = FALSE) de recuperación.
+router.get('/calendario', autenticar, async (req, res) => {
+  const { deportistaId, desde, hasta } = req.query;
+  if (!deportistaId || !desde || !hasta) {
+    return res.status(400).json({ error: 'deportistaId, desde y hasta son obligatorios' });
+  }
+  try {
+    const { rows: equiposDelDeportista } = await pool.query(
+      'SELECT DISTINCT equipo_id FROM deportista_equipo_temporada WHERE deportista_id = $1',
+      [deportistaId]
+    );
+    const { roles, id: usuarioId } = req.usuario;
+    if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
+      let autorizado = false;
+      for (const eq of equiposDelDeportista) {
+        if (await usuarioEsPersonalDelEquipo(usuarioId, eq.equipo_id)) { autorizado = true; break; }
+      }
+      if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+    const { rows } = await pool.query(
+      `SELECT s.*, e.nombre AS equipo_nombre, dep.nombre AS deporte_nombre
+       FROM sesiones s
+       JOIN equipos e ON e.id = s.equipo_id
+       JOIN deportes dep ON dep.id = e.deporte_id
+       WHERE s.fecha BETWEEN $2 AND $3
+         AND (
+           s.solo_deportista_id = $1
+           OR (s.solo_deportista_id IS NULL AND EXISTS (
+             SELECT 1 FROM deportista_equipo_temporada det
+             WHERE det.deportista_id = $1 AND det.equipo_id = s.equipo_id AND det.temporada_id = s.temporada_id
+           ))
+         )
+       ORDER BY s.fecha, s.hora_inicio NULLS LAST`,
+      [deportistaId, desde, hasta]
+    );
+    res.json(rows.map((f) => ({
+      ...filaASesion(f),
+      equipoNombre: f.equipo_nombre,
+      deporteNombre: f.deporte_nombre,
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al consultar el calendario' });
   }
 });
 

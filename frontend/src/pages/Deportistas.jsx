@@ -14,6 +14,7 @@ import { BarraCuotaMini } from '../components/BarraCuota';
 import { colorEtiqueta, iniciales } from '../utils/colorEtiqueta';
 import { EsquemaPosiciones, catalogoPosicionesPara, nombrePosicion } from '../components/EsquemaPosiciones';
 import { BotonInforme, CabeceraInforme } from '../components/Informe';
+import { CalendarioDeportista } from '../components/CalendarioDeportista';
 
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
 
@@ -521,6 +522,11 @@ function DeportistaDetalle({ deportistaId, puedeGestionar, onVolver }) {
           </div>
         </div>
       )}
+
+      <div className="bloque-ficha">
+        <h2>🗓️ Mi calendario</h2>
+        <CalendarioDeportista deportistaId={deportistaId} />
+      </div>
 
       <div className="bloque-ficha">
         <h2>📅 Historial de deportes practicados</h2>

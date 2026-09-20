@@ -141,26 +141,60 @@ async function partidoYPermisoGestion(req, partidoId) {
 }
 
 // GET /api/partidos?equipoId=&temporadaId= - listado, ordenado por fecha.
+// Con equipoId: los partidos de ese equipo (comportamiento de siempre).
+// Sin equipoId: los partidos de TODOS los equipos que el usuario puede
+// ver (para la sección "Partidos" de Dirección deportiva) — administración
+// y dirección deportiva ven los de todo el club; entrenador/monitor solo
+// los de sus propios equipos.
 router.get('/', autenticar, async (req, res) => {
   const { equipoId, temporadaId } = req.query;
-  if (!equipoId) return res.status(400).json({ error: 'equipoId es obligatorio' });
-  if (!(await puedeVerEquipo(req, equipoId))) {
-    return res.status(403).json({ error: 'No tienes permiso para esto' });
+  if (equipoId) {
+    if (!(await puedeVerEquipo(req, equipoId))) {
+      return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+    const condiciones = ['p.equipo_id = $1'];
+    const parametros = [equipoId];
+    if (temporadaId) {
+      parametros.push(temporadaId);
+      condiciones.push(`p.temporada_id = $${parametros.length}`);
+    }
+    try {
+      const { rows } = await pool.query(
+        `SELECT p.*, c.nombre AS competicion_nombre, e.nombre AS equipo_nombre FROM partidos p
+         LEFT JOIN competiciones c ON c.id = p.competicion_id
+         JOIN equipos e ON e.id = p.equipo_id
+         WHERE ${condiciones.join(' AND ')} ORDER BY p.fecha DESC, p.hora DESC NULLS LAST`,
+        parametros
+      );
+      res.json(rows.map((f) => ({ ...filaAPartido(f), equipoNombre: f.equipo_nombre })));
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Error al consultar los partidos' });
+    }
+    return;
   }
-  const condiciones = ['p.equipo_id = $1'];
-  const parametros = [equipoId];
+
+  const { roles, id: usuarioId } = req.usuario;
+  const condiciones = [`dep.tipo = 'equipo'`];
+  const parametros = [];
   if (temporadaId) {
     parametros.push(temporadaId);
     condiciones.push(`p.temporada_id = $${parametros.length}`);
   }
+  if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
+    parametros.push(usuarioId);
+    condiciones.push(`EXISTS (SELECT 1 FROM equipo_personal ep WHERE ep.equipo_id = p.equipo_id AND ep.usuario_id = $${parametros.length})`);
+  }
   try {
     const { rows } = await pool.query(
-      `SELECT p.*, c.nombre AS competicion_nombre FROM partidos p
+      `SELECT p.*, c.nombre AS competicion_nombre, e.nombre AS equipo_nombre FROM partidos p
+       JOIN equipos e ON e.id = p.equipo_id
+       JOIN deportes dep ON dep.id = e.deporte_id
        LEFT JOIN competiciones c ON c.id = p.competicion_id
        WHERE ${condiciones.join(' AND ')} ORDER BY p.fecha DESC, p.hora DESC NULLS LAST`,
       parametros
     );
-    res.json(rows.map(filaAPartido));
+    res.json(rows.map((f) => ({ ...filaAPartido(f), equipoNombre: f.equipo_nombre })));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al consultar los partidos' });

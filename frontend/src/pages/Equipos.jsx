@@ -513,26 +513,8 @@ function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
         )}
       </div>
 
-      {equipo.deporteTipo === 'equipo' && (
-        <div className="bloque-ficha">
-          <PartidosEquipo
-            equipoId={equipoId}
-            temporadaId={equipo.temporadaId}
-            puedeGestionar={puedeGestionar}
-            equipoNombre={equipo.nombre}
-            nombreClubCompeticion={equipo.nombreClubCompeticion}
-            calendarioExternoUrl={equipo.calendarioExternoUrl}
-            onEquipoActualizado={cargarEquipo}
-          />
-        </div>
-      )}
-
       <div className="bloque-ficha">
         <AsistenciaEquipo equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
-      </div>
-
-      <div className="bloque-ficha">
-        <PlanificacionMensual equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
       </div>
     </div>
   );
@@ -879,840 +861,6 @@ function FormularioFichaTecnica({ jugador, deporteNombre, onGuardar, onSubirFoto
 // Solo para deportes de equipo (fútbol/baloncesto): individuales no
 // juegan partidos, se les hace seguimiento por asistencia (más abajo).
 
-function PartidosEquipo({
-  equipoId, temporadaId, puedeGestionar, equipoNombre, nombreClubCompeticion, calendarioExternoUrl, onEquipoActualizado,
-}) {
-  const [partidos, setPartidos] = useState([]);
-  const [estadisticas, setEstadisticas] = useState(null);
-  const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState('');
-  const [mostrarFormulario, setMostrarFormulario] = useState(false);
-  const [mostrarImportar, setMostrarImportar] = useState(false);
-  const [partidoDirectoId, setPartidoDirectoId] = useState(null);
-
-  async function cargar() {
-    setCargando(true);
-    try {
-      const [lista, stats] = await Promise.all([
-        api.get(`/partidos?equipoId=${equipoId}&temporadaId=${temporadaId}`),
-        api.get(`/partidos/estadisticas?equipoId=${equipoId}&temporadaId=${temporadaId}`),
-      ]);
-      setPartidos(lista);
-      setEstadisticas(stats);
-      setError('');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setCargando(false);
-    }
-  }
-
-  useEffect(() => {
-    cargar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [equipoId, temporadaId]);
-
-  async function crearPartido(datos) {
-    const creado = await api.post('/partidos', { ...datos, equipoId, temporadaId });
-    setMostrarFormulario(false);
-    await cargar();
-    // Abrimos el Directo del partido recién creado directamente, para no
-    // obligar a un segundo clic buscándolo en la tabla.
-    setPartidoDirectoId(creado.id);
-  }
-
-  async function guardarResultado(partidoId, resultadoPropio, resultadoRival) {
-    await api.put(`/partidos/${partidoId}`, { resultadoPropio, resultadoRival });
-    cargar();
-  }
-
-  async function eliminarPartido(partidoId) {
-    if (!confirm('¿Eliminar este partido?')) return;
-    await api.delete(`/partidos/${partidoId}`);
-    cargar();
-  }
-
-  return (
-    <>
-      <CabeceraInforme titulo="Informe de partidos" subtitulo={equipoNombre} />
-      <div className="cabecera">
-        <h2>Partidos y resultados</h2>
-        <div className="acciones-fila">
-          <BotonInforme titulo={`partidos ${equipoNombre || ''}`} />
-        </div>
-      </div>
-      {error && <p className="error">{error}</p>}
-      {estadisticas && (
-        <p className="nota" style={{ marginBottom: 10 }}>
-          {estadisticas.jugados} jugados · {estadisticas.ganados}G {estadisticas.empatados}E {estadisticas.perdidos}P
-          {' '}· {estadisticas.favor}-{estadisticas.contra}
-        </p>
-      )}
-      {puedeGestionar && (
-        <div className="acciones-fila" style={{ marginBottom: 12 }}>
-          <button onClick={() => setMostrarFormulario((v) => !v)}>
-            {mostrarFormulario ? 'Cancelar' : '+ Nuevo partido'}
-          </button>
-          <button onClick={() => setMostrarImportar((v) => !v)}>
-            {mostrarImportar ? 'Cancelar' : '🌐 Importar calendario (RFFM)'}
-          </button>
-        </div>
-      )}
-      {mostrarImportar && (
-        <ImportarCalendarioRFFM
-          equipoId={equipoId}
-          temporadaId={temporadaId}
-          nombreClubCompeticion={nombreClubCompeticion}
-          calendarioExternoUrl={calendarioExternoUrl}
-          onImportado={() => { cargar(); onEquipoActualizado?.(); }}
-        />
-      )}
-      {mostrarFormulario && <FormularioPartido equipoId={equipoId} temporadaId={temporadaId} onCrear={crearPartido} />}
-      {cargando ? (
-        <p className="cargando">Cargando…</p>
-      ) : partidos.length === 0 ? (
-        <p className="nota">Todavía no hay partidos registrados esta temporada.</p>
-      ) : (
-        <div className="tabla-scroll" style={{ marginBottom: 20 }}>
-          <table className="tabla-usuarios">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Rival</th>
-                <th>Local/Visitante</th>
-                <th>Resultado</th>
-                {puedeGestionar && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {partidos.map((p) => (
-                <Fragment key={p.id}>
-                  <FilaPartido
-                    partido={p}
-                    puedeGestionar={puedeGestionar}
-                    onGuardarResultado={(propio, rival) => guardarResultado(p.id, propio, rival)}
-                    onEliminar={() => eliminarPartido(p.id)}
-                    directoAbierto={partidoDirectoId === p.id}
-                    onAlternarDirecto={() => setPartidoDirectoId(partidoDirectoId === p.id ? null : p.id)}
-                  />
-                  {partidoDirectoId === p.id && (
-                    <tr>
-                      <td colSpan={5}>
-                        <MarcadorDirecto partidoId={p.id} equipoId={equipoId} puedeGestionar={puedeGestionar} onCambio={cargar} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
-  );
-}
-
-// Importa el calendario del equipo desde una URL de RFFM (ver POST
-// /partidos/importar-calendario en el backend): crea o actualiza los
-// partidos, con fecha, rival y escudo si la RFFM lo trae. Hace falta
-// haber rellenado antes "nombre del club en la RFFM" (cómo aparece el
-// propio club en esos datos, para poder distinguir el rival) - si no
-// está puesto, se pide aquí mismo antes de poder importar.
-function ImportarCalendarioRFFM({ equipoId, temporadaId, nombreClubCompeticion, calendarioExternoUrl, onImportado }) {
-  const [nombreClub, setNombreClub] = useState(nombreClubCompeticion || '');
-  const [url, setUrl] = useState(calendarioExternoUrl || '');
-  const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState('');
-  const [resultado, setResultado] = useState(null);
-
-  async function manejarEnvio(evento) {
-    evento.preventDefault();
-    if (!url.trim()) return;
-    setError('');
-    setResultado(null);
-    setEnviando(true);
-    try {
-      if (nombreClub.trim() !== (nombreClubCompeticion || '')) {
-        await api.put(`/equipos/${equipoId}`, { nombreClubCompeticion: nombreClub.trim() });
-      }
-      const r = await api.post('/partidos/importar-calendario', { equipoId, temporadaId, url: url.trim() });
-      setResultado(r);
-      onImportado?.();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  return (
-    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 560, marginBottom: 16 }}>
-      <p className="nota">
-        Pega el enlace del calendario de este equipo en la web de la RFFM (competicion/calendario?...) y se
-        crearán/actualizarán automáticamente sus partidos, con fecha, rival y escudo si la RFFM lo trae.
-        Se puede volver a importar más adelante para traer los partidos y resultados nuevos.
-      </p>
-      <label>
-        Nombre del club en la RFFM
-        <input
-          value={nombreClub}
-          onChange={(e) => setNombreClub(e.target.value)}
-          placeholder='Ej: "AD Nuevo Baztán" (tal y como aparece en la RFFM)'
-          required
-        />
-      </label>
-      <label>
-        Enlace del calendario (rffm.es)
-        <input
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://www.rffm.es/competicion/calendario?..."
-          required
-        />
-      </label>
-      {error && <p className="error">{error}</p>}
-      {resultado && (
-        <div className="nota" style={{ background: 'var(--color-superficie-alt)', padding: 10, borderRadius: 8 }}>
-          <p style={{ margin: 0 }}>
-            {resultado.totalEncontrados} partidos encontrados · {resultado.partidosCreados} nuevos
-            {' '}· {resultado.partidosActualizados} actualizados
-            {resultado.partidosIgnorados > 0 && ` · ${resultado.partidosIgnorados} no se han podido interpretar`}
-          </p>
-          {resultado.rivalesSinReconocer?.length > 0 && (
-            <p style={{ margin: '6px 0 0' }} className="texto-peligro">
-              No se ha podido identificar quién es el rival en: {resultado.rivalesSinReconocer.join(', ')}.
-              Revisa que "Nombre del club en la RFFM" esté escrito tal cual aparece allí.
-            </p>
-          )}
-        </div>
-      )}
-      <button type="submit" disabled={enviando}>{enviando ? 'Importando…' : 'Importar calendario'}</button>
-    </form>
-  );
-}
-
-function FilaPartido({ partido: p, puedeGestionar, onGuardarResultado, onEliminar, directoAbierto, onAlternarDirecto }) {
-  const [propio, setPropio] = useState(p.resultadoPropio ?? '');
-  const [rival, setRival] = useState(p.resultadoRival ?? '');
-
-  function guardar() {
-    if (propio === '' || rival === '') return;
-    onGuardarResultado(Number(propio), Number(rival));
-  }
-
-  return (
-    <tr>
-      <td>
-        {p.fecha?.slice(0, 10)}{p.hora ? ` ${p.hora.slice(0, 5)}` : ''}
-        {p.enDirecto && <span className="texto-peligro"> · EN DIRECTO</span>}
-      </td>
-      <td>
-        {p.escudoRival && <img src={p.escudoRival} alt="" className="escudo-rival-mini" />}
-        {p.rival}{(p.competicionNombre || p.competicion) ? <span className="nota"> ({p.competicionNombre || p.competicion})</span> : ''}
-      </td>
-      <td>{p.localVisitante === 'local' ? 'Local' : 'Visitante'}</td>
-      <td>
-        {puedeGestionar ? (
-          <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-            <input
-              type="number" min="0" style={{ maxWidth: 56 }} value={propio}
-              onChange={(e) => setPropio(e.target.value)} onBlur={guardar}
-            />
-            -
-            <input
-              type="number" min="0" style={{ maxWidth: 56 }} value={rival}
-              onChange={(e) => setRival(e.target.value)} onBlur={guardar}
-            />
-          </span>
-        ) : p.jugado || p.enDirecto ? `${p.resultadoPropio ?? 0} - ${p.resultadoRival ?? 0}` : 'Pendiente'}
-      </td>
-      <td className="acciones-fila">
-        <button className="boton-lesion" onClick={onAlternarDirecto}>
-          {directoAbierto ? 'Cerrar' : 'Directo'}
-        </button>
-        {puedeGestionar && <button className="boton-peligro" onClick={onEliminar}>Eliminar</button>}
-      </td>
-    </tr>
-  );
-}
-
-const ETIQUETAS_EVENTO = {
-  gol_propio: 'Gol propio',
-  gol_rival: 'Gol rival',
-  tarjeta_amarilla_propio: 'Amarilla (propio)',
-  tarjeta_amarilla_rival: 'Amarilla (rival)',
-  tarjeta_roja_propio: 'Roja (propio)',
-  tarjeta_roja_rival: 'Roja (rival)',
-  tiro_propio: 'Tiro propio',
-  tiro_rival: 'Tiro rival',
-  falta_favor: 'Falta a favor',
-  falta_contra: 'Falta en contra',
-  corner_favor: 'Córner a favor',
-  corner_contra: 'Córner en contra',
-  posesion_cambio: 'Cambio de posesión',
-  otro: 'Otro',
-};
-
-// Directo v2 (a partir de las capturas de referencia que pasó Sergio):
-// convocatoria previa, cronómetro real con partes configurables por el
-// entrenador, y un botón por cada acción — el minuto lo calcula el
-// servidor solo a partir del cronómetro, aquí no se escribe a mano.
-
-function formatoReloj(segundosTotales) {
-  const seg = Math.max(0, Math.floor(segundosTotales || 0));
-  const m = Math.floor(seg / 60);
-  const s = seg % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-// Un botón grande por acción, con icono y color propio, agrupados en dos
-// columnas (nosotros / rival) para que el entrenador toque sin tener que
-// leer texto en mitad de un partido real.
-const ACCIONES_PROPIAS = [
-  { tipo: 'gol_propio', etiqueta: 'Gol', icono: '⚽', clase: 'accion-gol' },
-  { tipo: 'tiro_propio', etiqueta: 'Tiro', icono: '🎯', clase: 'accion-tiro' },
-  { tipo: 'corner_favor', etiqueta: 'Córner', icono: '🚩', clase: 'accion-corner' },
-  { tipo: 'falta_favor', etiqueta: 'Falta a favor', icono: '⚠️', clase: 'accion-falta' },
-  { tipo: 'tarjeta_amarilla_propio', etiqueta: 'Amarilla', icono: '🟨', clase: 'accion-amarilla' },
-  { tipo: 'tarjeta_roja_propio', etiqueta: 'Roja', icono: '🟥', clase: 'accion-roja' },
-];
-const ACCIONES_RIVAL = [
-  { tipo: 'gol_rival', etiqueta: 'Gol', icono: '⚽', clase: 'accion-gol' },
-  { tipo: 'tiro_rival', etiqueta: 'Tiro', icono: '🎯', clase: 'accion-tiro' },
-  { tipo: 'corner_contra', etiqueta: 'Córner', icono: '🚩', clase: 'accion-corner' },
-  { tipo: 'falta_contra', etiqueta: 'Falta en contra', icono: '⚠️', clase: 'accion-falta' },
-  { tipo: 'tarjeta_amarilla_rival', etiqueta: 'Amarilla', icono: '🟨', clase: 'accion-amarilla' },
-  { tipo: 'tarjeta_roja_rival', etiqueta: 'Roja', icono: '🟥', clase: 'accion-roja' },
-];
-const TIPOS_CON_OCASION_CLARA = new Set(['tiro_propio', 'tiro_rival']);
-const TIPOS_CON_JUGADOR = new Set([
-  'gol_propio', 'tarjeta_amarilla_propio', 'tarjeta_roja_propio',
-  'tiro_propio', 'falta_favor', 'falta_contra', 'corner_favor',
-]);
-
-const ETIQUETAS_RESUMEN = [
-  ['Goles', 'gol_propio', 'gol_rival', false],
-  ['Tiros', 'tiro_propio', 'tiro_rival', true],
-  ['Córners', 'corner_favor', 'corner_contra', false],
-  ['Faltas', 'falta_favor', 'falta_contra', false],
-  ['Amarillas', 'tarjeta_amarilla_propio', 'tarjeta_amarilla_rival', false],
-  ['Rojas', 'tarjeta_roja_propio', 'tarjeta_roja_rival', false],
-];
-
-function ResumenDirecto({ partidoId }) {
-  const [resumen, setResumen] = useState(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    api.get(`/partidos/${partidoId}/resumen`).then(setResumen).catch((err) => setError(err.message));
-  }, [partidoId]);
-
-  if (error) return <p className="error">{error}</p>;
-  if (!resumen) return <p className="cargando">Cargando…</p>;
-
-  return (
-    <div className="tabla-scroll" style={{ marginBottom: 12 }}>
-      <table className="tabla-usuarios">
-        <thead><tr><th>Resumen</th><th>Nosotros</th><th>Rival</th></tr></thead>
-        <tbody>
-          {ETIQUETAS_RESUMEN.map(([etiqueta, tipoPropio, tipoRival, conOcasionClara]) => (
-            <tr key={etiqueta}>
-              <td>{etiqueta}</td>
-              <td>
-                {resumen[tipoPropio]?.total || 0}
-                {conOcasionClara ? ` (${resumen[tipoPropio]?.ocasionesClaras || 0} claras)` : ''}
-              </td>
-              <td>
-                {resumen[tipoRival]?.total || 0}
-                {conOcasionClara ? ` (${resumen[tipoRival]?.ocasionesClaras || 0} claras)` : ''}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// Convocatoria/alineación del partido: qué jugadores de la plantilla
-// juegan, con dorsal y si son titulares. Necesaria para poder asignar
-// jugador a cada acción del directo.
-function AlineacionPartido({ partidoId, equipoId, puedeGestionar, convocados, onGuardado }) {
-  const [plantilla, setPlantilla] = useState([]);
-  const [seleccion, setSeleccion] = useState({});
-  const [error, setError] = useState('');
-  const [guardando, setGuardando] = useState(false);
-
-  useEffect(() => {
-    api.get(`/equipos/${equipoId}`).then((eq) => {
-      const lista = eq.deportistas || [];
-      setPlantilla(lista);
-      const inicial = {};
-      lista.forEach((d) => {
-        const convocado = convocados.find((c) => c.deportistaId === d.id);
-        inicial[d.id] = {
-          incluido: !!convocado,
-          dorsal: convocado ? (convocado.dorsal ?? '') : (d.dorsal ?? ''),
-          titular: convocado ? convocado.titular : true,
-        };
-      });
-      setSeleccion(inicial);
-    }).catch((err) => setError(err.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [equipoId]);
-
-  function actualizar(id, campo, valor) {
-    setSeleccion((actual) => ({ ...actual, [id]: { ...actual[id], [campo]: valor } }));
-  }
-
-  async function guardar() {
-    setGuardando(true);
-    setError('');
-    try {
-      const nuevos = Object.entries(seleccion)
-        .filter(([, v]) => v.incluido)
-        .map(([deportistaId, v]) => ({
-          deportistaId,
-          dorsal: v.dorsal !== '' ? Number(v.dorsal) : undefined,
-          titular: v.titular !== false,
-        }));
-      await api.put(`/partidos/${partidoId}/alineacion`, { convocados: nuevos });
-      await onGuardado();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setGuardando(false);
-    }
-  }
-
-  if (!puedeGestionar) {
-    return (
-      <p className="nota">
-        Convocados: {convocados.length === 0 ? 'sin definir todavía' : convocados.map((c) => c.nombre).join(', ')}
-      </p>
-    );
-  }
-
-  return (
-    <div className="tarjeta" style={{ maxWidth: 'none', margin: '8px 0' }}>
-      <h3 style={{ marginTop: 0, fontSize: 15 }}>Convocatoria</h3>
-      {plantilla.length === 0 ? (
-        <p className="nota">Este equipo todavía no tiene plantilla fichada esta temporada.</p>
-      ) : (
-        <div className="tabla-scroll" style={{ marginBottom: 12 }}>
-          <table className="tabla-usuarios">
-            <thead>
-              <tr><th></th><th>Jugador</th><th>Dorsal</th><th>Titular</th></tr>
-            </thead>
-            <tbody>
-              {plantilla.map((d) => {
-                const v = seleccion[d.id] || {};
-                return (
-                  <tr key={d.id}>
-                    <td><input type="checkbox" checked={!!v.incluido} onChange={(e) => actualizar(d.id, 'incluido', e.target.checked)} /></td>
-                    <td>{d.nombre} {d.apellidos}</td>
-                    <td>
-                      <input
-                        type="number" min="0" style={{ maxWidth: 64 }} value={v.dorsal ?? ''}
-                        onChange={(e) => actualizar(d.id, 'dorsal', e.target.value)} disabled={!v.incluido}
-                      />
-                    </td>
-                    <td><input type="checkbox" checked={v.titular !== false} onChange={(e) => actualizar(d.id, 'titular', e.target.checked)} disabled={!v.incluido} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {error && <p className="error">{error}</p>}
-      <button onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar convocatoria'}</button>
-    </div>
-  );
-}
-
-// Configuración de las partes del partido (cuántas y cuánto dura cada
-// una) antes de arrancar el cronómetro — el entrenador puede tocarlas.
-function ConfiguracionDirecto({ partesIniciales, onIniciar }) {
-  const [partes, setPartes] = useState(
-    Array.isArray(partesIniciales) && partesIniciales.length > 0
-      ? partesIniciales
-      : [{ nombre: '1ª parte', duracionMin: 25 }, { nombre: '2ª parte', duracionMin: 25 }]
-  );
-  const [error, setError] = useState('');
-  const [enviando, setEnviando] = useState(false);
-
-  function actualizarParte(indice, campo, valor) {
-    setPartes((actuales) => actuales.map((p, i) => (i === indice ? { ...p, [campo]: valor } : p)));
-  }
-  function anadirParte() {
-    setPartes((actuales) => [...actuales, { nombre: `Parte ${actuales.length + 1}`, duracionMin: 10 }]);
-  }
-  function quitarParte(indice) {
-    setPartes((actuales) => actuales.filter((_, i) => i !== indice));
-  }
-
-  async function iniciar() {
-    if (partes.length === 0 || partes.some((p) => !p.nombre || !p.duracionMin)) {
-      setError('Cada parte necesita nombre y duración en minutos');
-      return;
-    }
-    setEnviando(true);
-    setError('');
-    try {
-      await onIniciar(partes.map((p) => ({ nombre: p.nombre, duracionMin: Number(p.duracionMin) })));
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  return (
-    <div className="tarjeta" style={{ maxWidth: 'none', margin: '8px 0' }}>
-      <h3 style={{ marginTop: 0, fontSize: 15 }}>Partes del partido</h3>
-      <p className="nota">Define cuántas partes tiene el partido y la duración de cada una antes de arrancar el directo.</p>
-      {partes.map((p, i) => (
-        <div key={i} className="barra-filtros" style={{ marginBottom: 8 }}>
-          <input value={p.nombre} onChange={(e) => actualizarParte(i, 'nombre', e.target.value)} style={{ flex: 1 }} />
-          <input type="number" min="1" value={p.duracionMin} onChange={(e) => actualizarParte(i, 'duracionMin', e.target.value)} style={{ maxWidth: 90 }} />
-          <span className="nota">min</span>
-          {partes.length > 1 && <button type="button" className="boton-enlace" onClick={() => quitarParte(i)}>quitar</button>}
-        </div>
-      ))}
-      <button type="button" className="boton-lesion" onClick={anadirParte} style={{ marginBottom: 12 }}>+ Añadir parte</button>
-      {error && <p className="error">{error}</p>}
-      <div>
-        <button onClick={iniciar} disabled={enviando}>{enviando ? 'Arrancando…' : '▶ Iniciar directo'}</button>
-      </div>
-    </div>
-  );
-}
-
-function MarcadorDirecto({ partidoId, equipoId, puedeGestionar, onCambio }) {
-  const [partido, setPartido] = useState(null);
-  const [eventos, setEventos] = useState([]);
-  const [convocados, setConvocados] = useState([]);
-  const [error, setError] = useState('');
-  const [jugadorId, setJugadorId] = useState('');
-  const [ocasionClara, setOcasionClara] = useState(false);
-  const [mostrarConvocatoria, setMostrarConvocatoria] = useState(false);
-  const [mostrarResumen, setMostrarResumen] = useState(false);
-  const [, forzarTick] = useState(0);
-
-  async function cargar() {
-    try {
-      const [p, ev, conv] = await Promise.all([
-        api.get(`/partidos/${partidoId}`),
-        api.get(`/partidos/${partidoId}/eventos`),
-        api.get(`/partidos/${partidoId}/alineacion`),
-      ]);
-      setPartido(p);
-      setEventos(ev);
-      setConvocados(conv);
-      setError('');
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  useEffect(() => {
-    cargar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partidoId]);
-
-  // El reloj en pantalla se recalcula cada segundo mientras el cronómetro
-  // esté en marcha (periodoIniciadoEn no nulo), sin volver a preguntar al
-  // servidor — se basa en la hora de inicio que ya nos ha dado.
-  useEffect(() => {
-    if (!partido?.periodoIniciadoEn) return undefined;
-    const intervalo = setInterval(() => forzarTick((t) => t + 1), 1000);
-    return () => clearInterval(intervalo);
-  }, [partido?.periodoIniciadoEn]);
-
-  const segundosParteActual = partido
-    ? (partido.periodoSegundosAcumulados || 0) + (partido.periodoIniciadoEn
-        ? Math.floor((Date.now() - new Date(partido.periodoIniciadoEn).getTime()) / 1000)
-        : 0)
-    : 0;
-
-  async function iniciarDirecto(partes) {
-    setPartido(await api.put(`/partidos/${partidoId}/directo/iniciar`, { configuracionPartes: partes }));
-    onCambio();
-  }
-  async function pausar() {
-    setPartido(await api.put(`/partidos/${partidoId}/directo/pausar`, {}));
-    onCambio();
-  }
-  async function reanudar() {
-    setPartido(await api.put(`/partidos/${partidoId}/directo/reanudar`, {}));
-    onCambio();
-  }
-  async function siguienteParte() {
-    setPartido(await api.put(`/partidos/${partidoId}/directo/siguiente-parte`, {}));
-    setMostrarResumen(true);
-    onCambio();
-  }
-  async function anadirParteExtra() {
-    const nombre = window.prompt('Nombre de la parte extra (ej: Prórroga 1)', 'Prórroga');
-    if (!nombre) return;
-    const duracionMin = Number(window.prompt('Duración en minutos', '10'));
-    if (!duracionMin) return;
-    setPartido(await api.put(`/partidos/${partidoId}/directo/anadir-parte`, { nombre, duracionMin }));
-  }
-  async function cambiarPosesion(valor) {
-    await api.put(`/partidos/${partidoId}/directo/posesion`, { valor });
-    await cargar();
-  }
-
-  async function registrar(tipo) {
-    try {
-      const datos = { tipo };
-      if (TIPOS_CON_JUGADOR.has(tipo) && jugadorId) datos.deportistaId = jugadorId;
-      if (TIPOS_CON_OCASION_CLARA.has(tipo)) datos.ocasionClara = ocasionClara;
-      await api.post(`/partidos/${partidoId}/eventos`, datos);
-      setJugadorId('');
-      setOcasionClara(false);
-      await cargar();
-      onCambio();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function eliminarEvento(id) {
-    await api.delete(`/partidos/eventos/${id}`);
-    await cargar();
-    onCambio();
-  }
-
-  if (error) return <p className="error">{error}</p>;
-  if (!partido) return <p className="cargando">Cargando…</p>;
-
-  const finalizado = partido.periodo === 'Finalizado';
-  const antesDeEmpezar = !partido.enDirecto && !finalizado;
-  const enMarcha = partido.enDirecto && !finalizado;
-
-  return (
-    <div className="tarjeta marcador-directo">
-      <div className="directo-cabecera">
-        <span className="directo-rival">Nosotros vs {partido.rival}</span>
-        <span className="directo-marcador">{partido.resultadoPropio ?? 0} - {partido.resultadoRival ?? 0}</span>
-        {enMarcha && (
-          <span className={`directo-reloj${!partido.periodoIniciadoEn ? ' en-pausa' : ''}`}>
-            ⏱ {formatoReloj(segundosParteActual)}
-            {partido.minutoActual != null ? ` · min. ${partido.minutoActual}` : ''}
-            {!partido.periodoIniciadoEn && ' · pausa'}
-          </span>
-        )}
-        <span className="directo-estado">
-          {finalizado ? 'Finalizado' : antesDeEmpezar ? 'Sin empezar' : partido.periodo}
-        </span>
-      </div>
-
-      <div className="directo-cuerpo">
-        {antesDeEmpezar && (
-          <AlineacionPartido
-            partidoId={partidoId} equipoId={equipoId} puedeGestionar={puedeGestionar}
-            convocados={convocados} onGuardado={cargar}
-          />
-        )}
-        {antesDeEmpezar && puedeGestionar && (
-          convocados.length > 0
-            ? <ConfiguracionDirecto partesIniciales={partido.configuracionPartes} onIniciar={iniciarDirecto} />
-            : <p className="nota">Añade al menos un convocado a la convocatoria antes de arrancar el directo.</p>
-        )}
-
-        {!antesDeEmpezar && (
-          <div className="directo-controles">
-            <button type="button" className="boton-lesion" onClick={() => setMostrarConvocatoria((v) => !v)}>
-              👥 {mostrarConvocatoria ? 'Ocultar convocatoria' : `Convocatoria (${convocados.length})`}
-            </button>
-            <button type="button" className="boton-lesion" onClick={() => setMostrarResumen((v) => !v)}>
-              📊 {mostrarResumen ? 'Ocultar resumen' : 'Ver resumen'}
-            </button>
-          </div>
-        )}
-        {!antesDeEmpezar && mostrarConvocatoria && (
-          <AlineacionPartido
-            partidoId={partidoId} equipoId={equipoId} puedeGestionar={puedeGestionar}
-            convocados={convocados} onGuardado={cargar}
-          />
-        )}
-        {!antesDeEmpezar && mostrarResumen && <ResumenDirecto partidoId={partidoId} />}
-
-        {enMarcha && puedeGestionar && (
-          <>
-            <div className="directo-controles">
-              {partido.periodoIniciadoEn ? (
-                <button type="button" onClick={pausar}>⏸ Pausar</button>
-              ) : (
-                <button type="button" onClick={reanudar}>▶ Reanudar</button>
-              )}
-              <button type="button" className="boton-lesion" onClick={siguienteParte}>⏭ Siguiente parte</button>
-              <button type="button" className="boton-lesion" onClick={anadirParteExtra}>+ Parte extra</button>
-            </div>
-
-            <div className="directo-posesion">
-              <button
-                type="button"
-                className={`boton-posesion${partido.posesionActual === 'propio' ? ' activa' : ''}`}
-                onClick={() => cambiarPosesion('propio')}
-              >
-                🔵 Posesión nuestra
-              </button>
-              <button
-                type="button"
-                className={`boton-posesion${partido.posesionActual === 'rival' ? ' activa' : ''}`}
-                onClick={() => cambiarPosesion('rival')}
-              >
-                ⚪ Posesión rival
-              </button>
-            </div>
-
-            {convocados.length > 0 && (
-              <div className="directo-jugadores">
-                <p className="nota" style={{ margin: '0 0 6px' }}>
-                  Jugador de la próxima acción (opcional — se aplica a acciones propias):
-                </p>
-                <div className="chips-jugadores">
-                  {convocados.map((c) => (
-                    <button
-                      key={c.deportistaId}
-                      type="button"
-                      className={`chip-jugador${jugadorId === c.deportistaId ? ' activo' : ''}`}
-                      onClick={() => setJugadorId(jugadorId === c.deportistaId ? '' : c.deportistaId)}
-                    >
-                      {c.dorsal != null ? `${c.dorsal} · ` : ''}{c.nombre}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="directo-ocasion">
-              <label>
-                <input type="checkbox" checked={ocasionClara} onChange={(e) => setOcasionClara(e.target.checked)} />
-                🎯 Marcar el próximo tiro como ocasión clara
-              </label>
-            </div>
-
-            <div className="columnas-acciones">
-              <div className="columna-acciones">
-                <h4>Nosotros</h4>
-                <div className="grid-botones-accion">
-                  {ACCIONES_PROPIAS.map((a) => (
-                    <button
-                      key={a.tipo} type="button"
-                      className={`boton-accion-directo ${a.clase}`}
-                      onClick={() => registrar(a.tipo)}
-                    >
-                      <span className="icono-accion">{a.icono}</span>
-                      {a.etiqueta}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="columna-acciones">
-                <h4>Rival</h4>
-                <div className="grid-botones-accion">
-                  {ACCIONES_RIVAL.map((a) => (
-                    <button
-                      key={a.tipo} type="button"
-                      className={`boton-accion-directo ${a.clase}`}
-                      onClick={() => registrar(a.tipo)}
-                    >
-                      <span className="icono-accion">{a.icono}</span>
-                      {a.etiqueta}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="directo-eventos">
-          <h3 style={{ fontSize: 14, margin: '12px 0 6px' }}>Eventos</h3>
-          {eventos.length === 0 ? (
-            <p className="nota">Todavía no hay eventos registrados.</p>
-          ) : (
-            <ul className="lista-eventos-directo">
-              {eventos.map((e) => (
-                <li key={e.id} className="evento-directo">
-                  <span className="minuto-evento">{e.minuto != null ? `${e.minuto}'` : '—'}</span>
-                  <span>
-                    {ETIQUETAS_EVENTO[e.tipo] || e.tipo}
-                    {e.ocasionClara ? ' (ocasión clara)' : ''}
-                    {e.deportistaNombre ? ` — ${e.deportistaNombre}` : ''}
-                    {e.descripcion ? ` — ${e.descripcion}` : ''}
-                  </span>
-                  {puedeGestionar && (
-                    <button className="boton-enlace" style={{ marginLeft: 'auto' }} onClick={() => eliminarEvento(e.id)}>quitar</button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FormularioPartido({ equipoId, temporadaId, onCrear }) {
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
-  const [rival, setRival] = useState('');
-  const [localVisitante, setLocalVisitante] = useState('local');
-  const [competicionId, setCompeticionId] = useState('');
-  const [competiciones, setCompeticiones] = useState([]);
-  const [error, setError] = useState('');
-  const [enviando, setEnviando] = useState(false);
-
-  useEffect(() => {
-    if (!equipoId || !temporadaId) return;
-    api.get(`/competiciones?equipoId=${equipoId}&temporadaId=${temporadaId}`).then(setCompeticiones).catch(() => {});
-  }, [equipoId, temporadaId]);
-
-  async function manejarEnvio(evento) {
-    evento.preventDefault();
-    if (!fecha || !rival) return;
-    setError('');
-    setEnviando(true);
-    try {
-      await onCrear({ fecha, rival, localVisitante, competicionId: competicionId || undefined });
-      setRival('');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  return (
-    <form className="barra-filtros" onSubmit={manejarEnvio}>
-      <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
-      <input placeholder="Rival" value={rival} onChange={(e) => setRival(e.target.value)} required />
-      <select value={localVisitante} onChange={(e) => setLocalVisitante(e.target.value)}>
-        <option value="local">Local</option>
-        <option value="visitante">Visitante</option>
-      </select>
-      <select value={competicionId} onChange={(e) => setCompeticionId(e.target.value)}>
-        <option value="">Amistoso (sin competición)</option>
-        {competiciones.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-      </select>
-      <button type="submit" disabled={enviando}>{enviando ? 'Creando…' : 'Crear partido'}</button>
-      {error && <p className="error">{error}</p>}
-      {competiciones.length === 0 && (
-        <p className="nota" style={{ width: '100%', margin: '4px 0 0' }}>
-          Sin competiciones dadas de alta todavía para este equipo — puedes crearlas en la sección "Competición" del menú.
-        </p>
-      )}
-    </form>
-  );
-}
-
 // ---------- sesiones y control de asistencia ----------
 // Para cualquier equipo, pero es la métrica clave en deportes individuales
 // (Muay Thai, pádel, tenis...), donde no hay partidos.
@@ -1723,20 +871,24 @@ function FormularioPartido({ equipoId, temporadaId, onCrear }) {
 export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
   const [sesiones, setSesiones] = useState([]);
   const [resumen, setResumen] = useState([]);
+  const [plantilla, setPlantilla] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [mostrarRecuperacion, setMostrarRecuperacion] = useState(false);
   const [sesionAbiertaId, setSesionAbiertaId] = useState(null);
 
   async function cargar() {
     setCargando(true);
     try {
-      const [lista, resumenAsistencia] = await Promise.all([
+      const [lista, resumenAsistencia, equipo] = await Promise.all([
         api.get(`/sesiones?equipoId=${equipoId}&temporadaId=${temporadaId}`),
         api.get(`/sesiones/resumen-asistencia?equipoId=${equipoId}&temporadaId=${temporadaId}`),
+        api.get(`/equipos/${equipoId}`),
       ]);
       setSesiones(lista);
       setResumen(resumenAsistencia);
+      setPlantilla(equipo.deportistas || []);
       setError('');
     } catch (err) {
       setError(err.message);
@@ -1756,6 +908,24 @@ export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
     cargar();
   }
 
+  async function crearRecuperacion(datos) {
+    await api.post('/sesiones', { ...datos, equipoId, temporadaId, esRecuperacion: true });
+    setMostrarRecuperacion(false);
+    cargar();
+  }
+
+  async function alternarCancelada(sesion) {
+    if (sesion.cancelada) {
+      await api.put(`/sesiones/${sesion.id}`, { cancelada: false, motivoCancelacion: '' });
+      cargar();
+      return;
+    }
+    const motivo = window.prompt('Motivo de la cancelación (ej: lluvia, pista ocupada…)', sesion.motivoCancelacion || '');
+    if (motivo === null) return;
+    await api.put(`/sesiones/${sesion.id}`, { cancelada: true, motivoCancelacion: motivo });
+    cargar();
+  }
+
   async function eliminarSesion(sesionId) {
     if (!confirm('¿Eliminar esta sesión? Se borra también la asistencia registrada.')) return;
     if (sesionAbiertaId === sesionId) setSesionAbiertaId(null);
@@ -1764,6 +934,7 @@ export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
   }
 
   const faltasDestacadas = resumen.filter((r) => r.faltasSinJustificar >= 3);
+  const sesionesCancelables = sesiones.filter((s) => !s.esRecuperacion);
 
   return (
     <>
@@ -1776,11 +947,23 @@ export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
         </p>
       )}
       {puedeGestionar && (
-        <button onClick={() => setMostrarFormulario((v) => !v)} style={{ marginBottom: 12 }}>
-          {mostrarFormulario ? 'Cancelar' : '+ Nueva sesión'}
-        </button>
+        <div className="acciones-fila" style={{ marginBottom: 12 }}>
+          <button onClick={() => { setMostrarFormulario((v) => !v); setMostrarRecuperacion(false); }}>
+            {mostrarFormulario ? 'Cancelar' : '+ Nueva sesión'}
+          </button>
+          <button className="boton-outline-dorado" onClick={() => { setMostrarRecuperacion((v) => !v); setMostrarFormulario(false); }}>
+            {mostrarRecuperacion ? 'Cancelar' : '+ Sesión de recuperación'}
+          </button>
+        </div>
       )}
       {mostrarFormulario && <FormularioSesion onCrear={crearSesion} />}
+      {mostrarRecuperacion && (
+        <FormularioRecuperacion
+          plantilla={plantilla}
+          sesionesCancelables={sesionesCancelables}
+          onCrear={crearRecuperacion}
+        />
+      )}
       {cargando ? (
         <p className="cargando">Cargando…</p>
       ) : sesiones.length === 0 ? (
@@ -1801,8 +984,23 @@ export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
                 <Fragment key={s.id}>
                   <tr>
                     <td>{s.fecha?.slice(0, 10)}{s.horaInicio ? ` ${s.horaInicio.slice(0, 5)}` : ''}</td>
-                    <td>{s.titulo || '—'}</td>
-                    <td>{s.cancelada ? `Cancelada${s.motivoCancelacion ? `: ${s.motivoCancelacion}` : ''}` : 'Prevista'}</td>
+                    <td>
+                      {s.esRecuperacion
+                        ? `Recuperación${s.titulo ? ` · ${s.titulo}` : ''}`
+                        : (s.titulo || '—')}
+                      {s.cancelada && s.motivoCancelacion && (
+                        <div className="nota" style={{ marginTop: 2 }}>Motivo: {s.motivoCancelacion}</div>
+                      )}
+                    </td>
+                    <td>
+                      {s.esRecuperacion ? (
+                        <span className="badge-sesion badge-sesion-recuperacion">Recuperación</span>
+                      ) : s.cancelada ? (
+                        <span className="badge-sesion badge-sesion-cancelada">Cancelada</span>
+                      ) : (
+                        <span className="badge-sesion badge-sesion-prevista">Prevista</span>
+                      )}
+                    </td>
                     <td className="acciones-fila">
                       <button
                         className="boton-lesion"
@@ -1810,6 +1008,11 @@ export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
                       >
                         {sesionAbiertaId === s.id ? 'Cerrar' : 'Asistencia'}
                       </button>
+                      {puedeGestionar && !s.esRecuperacion && (
+                        <button className="boton-lesion" onClick={() => alternarCancelada(s)}>
+                          {s.cancelada ? 'Reactivar' : 'Cancelar clase'}
+                        </button>
+                      )}
                       {puedeGestionar && (
                         <button className="boton-peligro" onClick={() => eliminarSesion(s.id)}>Eliminar</button>
                       )}
@@ -1836,6 +1039,8 @@ function FormularioSesion({ onCrear }) {
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [horaInicio, setHoraInicio] = useState('');
   const [titulo, setTitulo] = useState('');
+  const [cancelada, setCancelada] = useState(false);
+  const [motivoCancelacion, setMotivoCancelacion] = useState('');
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
 
@@ -1845,8 +1050,16 @@ function FormularioSesion({ onCrear }) {
     setError('');
     setEnviando(true);
     try {
-      await onCrear({ fecha, horaInicio: horaInicio || undefined, titulo: titulo || undefined });
+      await onCrear({
+        fecha,
+        horaInicio: horaInicio || undefined,
+        titulo: titulo || undefined,
+        cancelada,
+        motivoCancelacion: cancelada ? (motivoCancelacion || undefined) : undefined,
+      });
       setTitulo('');
+      setCancelada(false);
+      setMotivoCancelacion('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1855,11 +1068,99 @@ function FormularioSesion({ onCrear }) {
   }
 
   return (
-    <form className="barra-filtros" onSubmit={manejarEnvio}>
-      <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
-      <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
+    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 460, marginBottom: 16 }}>
+      <div className="barra-filtros">
+        <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
+        <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
+      </div>
       <input placeholder="Título (opcional)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+
+      <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <input type="checkbox" checked={cancelada} onChange={(e) => setCancelada(e.target.checked)} />
+        Clase cancelada
+      </label>
+      {cancelada && (
+        <div className="aviso-cancelacion">
+          <label>
+            Motivo de la cancelación
+            <input
+              value={motivoCancelacion}
+              onChange={(e) => setMotivoCancelacion(e.target.value)}
+              placeholder="Ej. Lluvia, pista ocupada…"
+            />
+          </label>
+        </div>
+      )}
+
       <button type="submit" disabled={enviando}>{enviando ? 'Creando…' : 'Crear sesión'}</button>
+      {error && <p className="error">{error}</p>}
+    </form>
+  );
+}
+
+// Sesión de recuperación: como pidió Sergio, tanto administración como el
+// propio monitor pueden crearla, y es de UN deportista concreto — no de
+// toda la plantilla — para recuperar una clase perdida (normalmente una
+// cancelada). Aparece en el calendario del deportista en dorado.
+function FormularioRecuperacion({ plantilla, sesionesCancelables, onCrear }) {
+  const [deportistaId, setDeportistaId] = useState('');
+  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [horaInicio, setHoraInicio] = useState('');
+  const [recuperaSesionId, setRecuperaSesionId] = useState('');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!deportistaId || !fecha) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onCrear({
+        soloDeportistaId: deportistaId,
+        fecha,
+        horaInicio: horaInicio || undefined,
+        recuperaSesionId: recuperaSesionId || undefined,
+      });
+      setRecuperaSesionId('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="tarjeta formulario-usuario tarjeta-recuperacion" onSubmit={manejarEnvio} style={{ maxWidth: 460, marginBottom: 16 }}>
+      <p className="nota" style={{ margin: 0 }}>
+        Disponible para administración y para el monitor del equipo. Aparece en el calendario del deportista
+        en dorado, diferenciada de sus clases habituales.
+      </p>
+      <label>
+        Deportista
+        <select value={deportistaId} onChange={(e) => setDeportistaId(e.target.value)} required>
+          <option value="">Selecciona un deportista…</option>
+          {plantilla.map((d) => <option key={d.id} value={d.id}>{d.nombre} {d.apellidos}</option>)}
+        </select>
+      </label>
+      <div className="barra-filtros">
+        <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
+        <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
+      </div>
+      <label>
+        Recupera la sesión de (opcional)
+        <select value={recuperaSesionId} onChange={(e) => setRecuperaSesionId(e.target.value)}>
+          <option value="">— sin enlazar a una sesión concreta —</option>
+          {sesionesCancelables.filter((s) => s.cancelada).map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.fecha?.slice(0, 10)}{s.horaInicio ? ` ${s.horaInicio.slice(0, 5)}` : ''} — cancelada{s.motivoCancelacion ? ` (${s.motivoCancelacion})` : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button type="submit" className="boton-outline-dorado" disabled={enviando || !deportistaId}>
+        {enviando ? 'Creando…' : '+ Crear recuperación'}
+      </button>
       {error && <p className="error">{error}</p>}
     </form>
   );
@@ -1933,135 +1234,3 @@ function TablaAsistenciaSesion({ sesionId, puedeGestionar, onCambio }) {
   );
 }
 
-// ---------- planificación mensual (coordinador -> entrenador) ----------
-
-const NOMBRES_MES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
-
-function PlanificacionMensual({ equipoId, temporadaId, puedeGestionar }) {
-  const [meses, setMeses] = useState([]);
-  const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState('');
-  const anioActual = new Date().getFullYear();
-  const [anio, setAnio] = useState(anioActual);
-  const [mes, setMes] = useState(new Date().getMonth() + 1);
-
-  async function cargar() {
-    setCargando(true);
-    try {
-      setMeses(await api.get(`/planificaciones?equipoId=${equipoId}&temporadaId=${temporadaId}`));
-      setError('');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setCargando(false);
-    }
-  }
-
-  useEffect(() => {
-    cargar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [equipoId, temporadaId]);
-
-  async function guardarMes(anioGuardar, mesGuardar, contenido) {
-    await api.put('/planificaciones', { equipoId, temporadaId, anio: anioGuardar, mes: mesGuardar, contenido });
-    cargar();
-  }
-
-  async function eliminarMes(id) {
-    if (!confirm('¿Vaciar la planificación de este mes?')) return;
-    await api.delete(`/planificaciones/${id}`);
-    cargar();
-  }
-
-  const existente = meses.find((m) => m.anio === Number(anio) && m.mes === Number(mes));
-
-  return (
-    <>
-      <h2>Planificación mensual</h2>
-      {error && <p className="error">{error}</p>}
-      {cargando ? (
-        <p className="cargando">Cargando…</p>
-      ) : meses.length === 0 ? (
-        <p className="nota">Todavía no hay ningún mes planificado.</p>
-      ) : (
-        <div className="tabla-scroll" style={{ marginBottom: 16 }}>
-          <table className="tabla-usuarios">
-            <thead>
-              <tr><th>Mes</th><th>Contenido</th>{puedeGestionar && <th></th>}</tr>
-            </thead>
-            <tbody>
-              {meses.map((m) => (
-                <tr key={m.id}>
-                  <td>{NOMBRES_MES[m.mes - 1]} {m.anio}</td>
-                  <td style={{ whiteSpace: 'pre-wrap' }}>{m.contenido || '—'}</td>
-                  {puedeGestionar && (
-                    <td><button className="boton-peligro" onClick={() => eliminarMes(m.id)}>Vaciar</button></td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {puedeGestionar && (
-        <FormularioPlanificacion
-          anio={anio} mes={mes} contenidoInicial={existente?.contenido || ''}
-          onCambiarAnio={setAnio} onCambiarMes={setMes}
-          onGuardar={(contenido) => guardarMes(anio, mes, contenido)}
-        />
-      )}
-    </>
-  );
-}
-
-function FormularioPlanificacion({ anio, mes, contenidoInicial, onCambiarAnio, onCambiarMes, onGuardar }) {
-  const [contenido, setContenido] = useState(contenidoInicial);
-  const [guardando, setGuardando] = useState(false);
-  const [guardado, setGuardado] = useState(false);
-
-  useEffect(() => {
-    setContenido(contenidoInicial);
-    setGuardado(false);
-  }, [contenidoInicial]);
-
-  async function manejarEnvio(evento) {
-    evento.preventDefault();
-    setGuardando(true);
-    try {
-      await onGuardar(contenido);
-      setGuardado(true);
-    } finally {
-      setGuardando(false);
-    }
-  }
-
-  return (
-    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio}>
-      <div className="checkboxes-roles">
-        <label style={{ flexDirection: 'column' }}>
-          Año
-          <input
-            type="number" style={{ maxWidth: 100 }} value={anio}
-            onChange={(e) => onCambiarAnio(Number(e.target.value))}
-          />
-        </label>
-        <label style={{ flexDirection: 'column' }}>
-          Mes
-          <select value={mes} onChange={(e) => onCambiarMes(Number(e.target.value))}>
-            {NOMBRES_MES.map((nombre, i) => <option key={nombre} value={i + 1}>{nombre}</option>)}
-          </select>
-        </label>
-      </div>
-      <label>
-        Objetivos / contenido de este mes
-        <textarea rows={4} value={contenido} onChange={(e) => setContenido(e.target.value)} />
-      </label>
-      <button type="submit" disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar mes'}</button>
-      {guardado && !guardando && <span className="nota" style={{ marginLeft: 10 }}>Guardado.</span>}
-    </form>
-  );
-}

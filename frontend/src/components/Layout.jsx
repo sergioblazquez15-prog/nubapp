@@ -44,6 +44,7 @@ export function Layout() {
               {veAmplioDireccionDeportiva && <EnlaceNav to="/ejercicios" icono="📋">Base de ejercicios</EnlaceNav>}
               {veAmplioDireccionDeportiva && <EnlaceNav to="/metodologia" icono="🗓️">Planificación general</EnlaceNav>}
               {veAmplioDireccionDeportiva && <EnlaceNav to="/equipos" icono="⚽">Plantillas</EnlaceNav>}
+              {veAmplioDireccionDeportiva && <EnlaceNav to="/partidos" icono="🏟️">Partidos</EnlaceNav>}
               {veFichaYAsistencia && <EnlaceNav to="/deportistas" icono="🧑‍🤝‍🧑">Fichas individuales</EnlaceNav>}
               {veFichaYAsistencia && <EnlaceNav to="/asistencia" icono="✅">Asistencia</EnlaceNav>}
             </div>
