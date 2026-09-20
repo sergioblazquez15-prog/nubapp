@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { BarraCuota, BarraCuotaMini } from '../components/BarraCuota';
+import { BotonInforme, CabeceraInforme } from '../components/Informe';
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -35,7 +36,24 @@ export default function Cuotas() {
 
   const [mostrarNueva, setMostrarNueva] = useState(false);
   const [mostrarGrupal, setMostrarGrupal] = useState(false);
+  const [mostrarImportar, setMostrarImportar] = useState(false);
   const [cuotaAbiertaId, setCuotaAbiertaId] = useState(null);
+  const [exportando, setExportando] = useState(false);
+
+  async function exportarExcel() {
+    if (!temporadaId) return;
+    setExportando(true);
+    setError('');
+    try {
+      const parametros = new URLSearchParams({ temporadaId });
+      if (deporteFiltro) parametros.set('deporteId', deporteFiltro);
+      await api.descargar(`/cuotas/exportar?${parametros}`, 'cuotas.xlsx');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setExportando(false);
+    }
+  }
 
   useEffect(() => {
     api.get('/deportes').then(setDeportes).catch(() => {});
@@ -77,6 +95,16 @@ export default function Cuotas() {
     cargarDatos();
   }
 
+  async function importarExcel(archivo, deporteId) {
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+    formData.append('temporadaId', temporadaId);
+    formData.append('deporteId', deporteId);
+    const resultado = await api.postFile('/cuotas/importar', formData);
+    cargarDatos();
+    return resultado;
+  }
+
   async function aplicarGrupal(datos) {
     await api.post('/cuotas/grupal', { ...datos, temporadaId });
     setMostrarGrupal(false);
@@ -102,20 +130,36 @@ export default function Cuotas() {
     );
   }
 
+  const nombreTemporada = temporadas.find((t) => t.id === temporadaId)?.nombre;
+  const nombreDeporte = deportes.find((d) => d.id === deporteFiltro)?.nombre;
+
   return (
     <div className="pantalla-cuotas">
+      <CabeceraInforme
+        titulo="Informe de cuotas"
+        subtitulo={[nombreTemporada, nombreDeporte].filter(Boolean).join(' · ')}
+      />
       <div className="cabecera">
         <h1>Gestión económica — Cuotas</h1>
-        {puedeGestionar && (
-          <div className="acciones-fila">
-            <button onClick={() => { setMostrarGrupal((v) => !v); setMostrarNueva(false); }}>
-              {mostrarGrupal ? 'Cancelar' : 'Edición grupal'}
-            </button>
-            <button onClick={() => { setMostrarNueva((v) => !v); setMostrarGrupal(false); }}>
-              {mostrarNueva ? 'Cancelar' : '+ Dar de alta cuota'}
-            </button>
-          </div>
-        )}
+        <div className="acciones-fila">
+          <BotonInforme titulo={`cuotas ${nombreTemporada || ''}`} />
+          <button onClick={exportarExcel} disabled={exportando || !temporadaId}>
+            {exportando ? 'Exportando…' : '⬇️ Exportar a Excel'}
+          </button>
+          {puedeGestionar && (
+            <>
+              <button onClick={() => { setMostrarImportar((v) => !v); setMostrarNueva(false); setMostrarGrupal(false); }}>
+                {mostrarImportar ? 'Cancelar' : '⬆️ Importar Excel de secretaría'}
+              </button>
+              <button onClick={() => { setMostrarGrupal((v) => !v); setMostrarNueva(false); setMostrarImportar(false); }}>
+                {mostrarGrupal ? 'Cancelar' : 'Edición grupal'}
+              </button>
+              <button onClick={() => { setMostrarNueva((v) => !v); setMostrarGrupal(false); setMostrarImportar(false); }}>
+                {mostrarNueva ? 'Cancelar' : '+ Dar de alta cuota'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="barra-filtros">
@@ -136,6 +180,9 @@ export default function Cuotas() {
 
       {estadisticas && <EstadisticasCuotas estadisticas={estadisticas} />}
 
+      {mostrarImportar && (
+        <ImportarExcelCuotas deportes={deportes} onImportar={importarExcel} />
+      )}
       {mostrarNueva && (
         <FormularioNuevaCuota deportes={deportes} onCrear={crearCuota} />
       )}
@@ -236,6 +283,87 @@ function EstadisticasCuotas({ estadisticas: e }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Sube el Excel que lleva la secretaría con los cobros y lo traslada a las
+// cuotas de los deportistas (ver POST /cuotas/importar en el backend): se
+// casa cada fila con un deportista por Nº de socio o por nombre+apellidos,
+// y se registra el pago. Hay que elegir el deporte porque el Excel de la
+// secretaría no tiene por qué traer esa columna (suele ser un único deporte
+// por hoja); la temporada es la que ya está seleccionada arriba en la
+// pantalla.
+function ImportarExcelCuotas({ deportes, onImportar }) {
+  const [deporteId, setDeporteId] = useState('');
+  const [archivo, setArchivo] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState('');
+  const [resultado, setResultado] = useState(null);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!deporteId || !archivo) return;
+    setError('');
+    setResultado(null);
+    setEnviando(true);
+    try {
+      const r = await onImportar(archivo, deporteId);
+      setResultado(r);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 520 }}>
+      <p className="nota">
+        Sube el Excel de la secretaría con los cobros (columnas como Nº socio o Nombre/Apellidos,
+        Concepto, Importe, Fecha y Forma de pago — no hace falta que se llamen exactamente así).
+        Los pagos que ya estuvieran importados no se duplican, así que se puede volver a subir el
+        mismo archivo sin problema.
+      </p>
+      <label>
+        Deporte
+        <select value={deporteId} onChange={(e) => setDeporteId(e.target.value)} required>
+          <option value="" disabled>Selecciona un deporte…</option>
+          {deportes.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+        </select>
+      </label>
+      <label>
+        Archivo Excel (.xlsx)
+        <input
+          type="file"
+          accept=".xlsx"
+          onChange={(e) => setArchivo(e.target.files?.[0] || null)}
+          required
+        />
+      </label>
+      {error && <p className="error">{error}</p>}
+      {resultado && (
+        <div className="nota" style={{ background: 'var(--color-superficie-alt)', padding: 10, borderRadius: 8 }}>
+          <p style={{ margin: 0 }}>
+            {resultado.filasProcesadas} filas procesadas · {resultado.pagosCreados} pagos registrados
+            {resultado.pagosDuplicadosOmitidos > 0 && ` · ${resultado.pagosDuplicadosOmitidos} ya estaban importados (omitidos)`}
+            {resultado.cuotasCreadas > 0 && ` · ${resultado.cuotasCreadas} cuotas nuevas creadas`}
+          </p>
+          {resultado.noEncontrados.length > 0 && (
+            <>
+              <p style={{ margin: '8px 0 4px' }} className="texto-peligro">
+                {resultado.noEncontrados.length} filas no se han podido casar con ningún deportista:
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {resultado.noEncontrados.map((f, i) => (
+                  <li key={i}>Fila {f.fila}: {f.texto}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+      <button type="submit" disabled={enviando}>{enviando ? 'Importando…' : 'Importar'}</button>
+    </form>
   );
 }
 

@@ -6,6 +6,8 @@ import { Fragment, useEffect, useState } from 'react';
 import { api, urlMedia } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { colorEtiqueta } from '../utils/colorEtiqueta';
+import { POSICIONES_FUTBOL, POSICIONES_BALONCESTO, nombrePosicion, EsquemaPosiciones } from '../components/EsquemaPosiciones';
+import { BotonInforme, CabeceraInforme } from '../components/Informe';
 
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
 const ROLES_PERSONAL = ['entrenador', 'coordinador', 'monitor'];
@@ -16,37 +18,6 @@ const ICONOS_DEPORTE = {
 };
 function iconoDeporte(nombre) {
   return ICONOS_DEPORTE[nombre] || '🏅';
-}
-
-// Posiciones fijas por deporte, con su sitio (en % del ancho/alto) sobre
-// el esquema del campo/pista. Varias posiciones pueden repetirse en dos
-// puntos simétricos (ej: "lateral" izquierdo y derecho) porque en fútbol
-// son la misma categoría aunque se jueguen a ambos lados.
-const POSICIONES_FUTBOL = [
-  { id: 'portero', nombre: 'Portero', x: 50, y: 92 },
-  { id: 'central', nombre: 'Central', x: 35, y: 78 },
-  { id: 'central', nombre: 'Central', x: 65, y: 78 },
-  { id: 'lateral', nombre: 'Lateral', x: 10, y: 75 },
-  { id: 'lateral', nombre: 'Lateral', x: 90, y: 75 },
-  { id: 'medio_centro', nombre: 'Medio centro', x: 50, y: 58 },
-  { id: 'interior', nombre: 'Interior', x: 30, y: 42 },
-  { id: 'interior', nombre: 'Interior', x: 70, y: 42 },
-  { id: 'extremo', nombre: 'Extremo', x: 8, y: 20 },
-  { id: 'extremo', nombre: 'Extremo', x: 92, y: 20 },
-  { id: 'delantero', nombre: 'Delantero', x: 50, y: 8 },
-];
-
-const POSICIONES_BALONCESTO = [
-  { id: 'base', nombre: 'Base', x: 50, y: 80 },
-  { id: 'escolta', nombre: 'Escolta', x: 22, y: 58 },
-  { id: 'alero', nombre: 'Alero', x: 78, y: 45 },
-  { id: 'ala_pivot', nombre: 'Ala-pívot', x: 30, y: 22 },
-  { id: 'pivot', nombre: 'Pívot', x: 50, y: 8 },
-];
-
-function nombrePosicion(deporteNombre, id) {
-  const catalogo = deporteNombre === 'Baloncesto' ? POSICIONES_BALONCESTO : POSICIONES_FUTBOL;
-  return catalogo.find((p) => p.id === id)?.nombre || id;
 }
 
 export default function Equipos() {
@@ -456,6 +427,8 @@ function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
         ‹ Volver a equipos
       </button>
 
+      <CabeceraInforme titulo="Informe de plantilla" subtitulo={`${equipo.nombre} · ${equipo.temporadaNombre}`} />
+
       <div className="cabecera cabecera-ficha-persona">
         <span className="icono-equipo icono-equipo-grande">{iconoDeporte(equipo.deporteNombre)}</span>
         <div>
@@ -465,6 +438,9 @@ function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
             <span className="etiqueta-suave">{equipo.temporadaNombre}</span>
             {equipo.clubNombre && <span className="etiqueta-suave">vs. {equipo.clubNombre}</span>}
           </div>
+        </div>
+        <div className="acciones-fila" style={{ marginLeft: 'auto' }}>
+          <BotonInforme titulo={`plantilla ${equipo.nombre}`} />
         </div>
       </div>
 
@@ -539,7 +515,15 @@ function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
 
       {equipo.deporteTipo === 'equipo' && (
         <div className="bloque-ficha">
-          <PartidosEquipo equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
+          <PartidosEquipo
+            equipoId={equipoId}
+            temporadaId={equipo.temporadaId}
+            puedeGestionar={puedeGestionar}
+            equipoNombre={equipo.nombre}
+            nombreClubCompeticion={equipo.nombreClubCompeticion}
+            calendarioExternoUrl={equipo.calendarioExternoUrl}
+            onEquipoActualizado={cargarEquipo}
+          />
         </div>
       )}
 
@@ -891,78 +875,19 @@ function FormularioFichaTecnica({ jugador, deporteNombre, onGuardar, onSubirFoto
   );
 }
 
-// Esquema clicable del campo de fútbol o la pista de baloncesto. Cada
-// posición es un punto marcado sobre un SVG con las líneas del terreno de
-// juego; se resalta en dorado si es la principal y en un tono más suave
-// si es la secundaria.
-function EsquemaPosiciones({ posiciones, tipoCancha, posicionPrincipal, posicionSecundaria, onClicPosicion }) {
-  return (
-    <svg viewBox="0 0 100 100" className={`esquema-posiciones esquema-${tipoCancha}`} role="group" aria-label="Esquema de posiciones">
-      {tipoCancha === 'futbol' ? <FondoCampoFutbol /> : <FondoPistaBaloncesto />}
-      {posiciones.map((p, indice) => {
-        const estado = p.id === posicionPrincipal ? 'principal' : p.id === posicionSecundaria ? 'secundaria' : '';
-        return (
-          <g
-            key={indice}
-            className={`marcador-posicion ${estado}`}
-            transform={`translate(${p.x}, ${p.y})`}
-            onClick={() => onClicPosicion(p.id)}
-            role="button"
-            tabIndex={0}
-            aria-label={p.nombre}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onClicPosicion(p.id);
-              }
-            }}
-          >
-            <circle r="6.5" />
-            <text y="2">{p.nombre.slice(0, 3).toUpperCase()}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function FondoCampoFutbol() {
-  return (
-    <g className="fondo-cancha">
-      <rect x="2" y="2" width="96" height="96" rx="2" />
-      <line x1="2" y1="50" x2="98" y2="50" />
-      <circle cx="50" cy="50" r="9" />
-      <rect x="25" y="2" width="50" height="14" />
-      <rect x="25" y="84" width="50" height="14" />
-      <rect x="38" y="2" width="24" height="6" />
-      <rect x="38" y="92" width="24" height="6" />
-    </g>
-  );
-}
-
-function FondoPistaBaloncesto() {
-  return (
-    <g className="fondo-cancha">
-      <rect x="2" y="2" width="96" height="96" rx="2" />
-      <circle cx="50" cy="50" r="9" />
-      <rect x="30" y="2" width="40" height="30" />
-      <path d="M 30 32 A 20 20 0 0 0 70 32" />
-      <path d="M 20 2 A 45 45 0 0 0 20 40" />
-      <path d="M 80 2 A 45 45 0 0 1 80 40" />
-    </g>
-  );
-}
-
 // ---------- estadísticas de equipo: partidos y resultados ----------
 // Solo para deportes de equipo (fútbol/baloncesto): individuales no
 // juegan partidos, se les hace seguimiento por asistencia (más abajo).
 
-function PartidosEquipo({ equipoId, temporadaId, puedeGestionar }) {
+function PartidosEquipo({
+  equipoId, temporadaId, puedeGestionar, equipoNombre, nombreClubCompeticion, calendarioExternoUrl, onEquipoActualizado,
+}) {
   const [partidos, setPartidos] = useState([]);
   const [estadisticas, setEstadisticas] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [mostrarImportar, setMostrarImportar] = useState(false);
   const [partidoDirectoId, setPartidoDirectoId] = useState(null);
 
   async function cargar() {
@@ -1009,7 +934,13 @@ function PartidosEquipo({ equipoId, temporadaId, puedeGestionar }) {
 
   return (
     <>
-      <h2>Partidos y resultados</h2>
+      <CabeceraInforme titulo="Informe de partidos" subtitulo={equipoNombre} />
+      <div className="cabecera">
+        <h2>Partidos y resultados</h2>
+        <div className="acciones-fila">
+          <BotonInforme titulo={`partidos ${equipoNombre || ''}`} />
+        </div>
+      </div>
       {error && <p className="error">{error}</p>}
       {estadisticas && (
         <p className="nota" style={{ marginBottom: 10 }}>
@@ -1018,9 +949,23 @@ function PartidosEquipo({ equipoId, temporadaId, puedeGestionar }) {
         </p>
       )}
       {puedeGestionar && (
-        <button onClick={() => setMostrarFormulario((v) => !v)} style={{ marginBottom: 12 }}>
-          {mostrarFormulario ? 'Cancelar' : '+ Nuevo partido'}
-        </button>
+        <div className="acciones-fila" style={{ marginBottom: 12 }}>
+          <button onClick={() => setMostrarFormulario((v) => !v)}>
+            {mostrarFormulario ? 'Cancelar' : '+ Nuevo partido'}
+          </button>
+          <button onClick={() => setMostrarImportar((v) => !v)}>
+            {mostrarImportar ? 'Cancelar' : '🌐 Importar calendario (RFFM)'}
+          </button>
+        </div>
+      )}
+      {mostrarImportar && (
+        <ImportarCalendarioRFFM
+          equipoId={equipoId}
+          temporadaId={temporadaId}
+          nombreClubCompeticion={nombreClubCompeticion}
+          calendarioExternoUrl={calendarioExternoUrl}
+          onImportado={() => { cargar(); onEquipoActualizado?.(); }}
+        />
       )}
       {mostrarFormulario && <FormularioPartido equipoId={equipoId} temporadaId={temporadaId} onCrear={crearPartido} />}
       {cargando ? (
@@ -1067,6 +1012,86 @@ function PartidosEquipo({ equipoId, temporadaId, puedeGestionar }) {
   );
 }
 
+// Importa el calendario del equipo desde una URL de RFFM (ver POST
+// /partidos/importar-calendario en el backend): crea o actualiza los
+// partidos, con fecha, rival y escudo si la RFFM lo trae. Hace falta
+// haber rellenado antes "nombre del club en la RFFM" (cómo aparece el
+// propio club en esos datos, para poder distinguir el rival) - si no
+// está puesto, se pide aquí mismo antes de poder importar.
+function ImportarCalendarioRFFM({ equipoId, temporadaId, nombreClubCompeticion, calendarioExternoUrl, onImportado }) {
+  const [nombreClub, setNombreClub] = useState(nombreClubCompeticion || '');
+  const [url, setUrl] = useState(calendarioExternoUrl || '');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState('');
+  const [resultado, setResultado] = useState(null);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!url.trim()) return;
+    setError('');
+    setResultado(null);
+    setEnviando(true);
+    try {
+      if (nombreClub.trim() !== (nombreClubCompeticion || '')) {
+        await api.put(`/equipos/${equipoId}`, { nombreClubCompeticion: nombreClub.trim() });
+      }
+      const r = await api.post('/partidos/importar-calendario', { equipoId, temporadaId, url: url.trim() });
+      setResultado(r);
+      onImportado?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 560, marginBottom: 16 }}>
+      <p className="nota">
+        Pega el enlace del calendario de este equipo en la web de la RFFM (competicion/calendario?...) y se
+        crearán/actualizarán automáticamente sus partidos, con fecha, rival y escudo si la RFFM lo trae.
+        Se puede volver a importar más adelante para traer los partidos y resultados nuevos.
+      </p>
+      <label>
+        Nombre del club en la RFFM
+        <input
+          value={nombreClub}
+          onChange={(e) => setNombreClub(e.target.value)}
+          placeholder='Ej: "AD Nuevo Baztán" (tal y como aparece en la RFFM)'
+          required
+        />
+      </label>
+      <label>
+        Enlace del calendario (rffm.es)
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://www.rffm.es/competicion/calendario?..."
+          required
+        />
+      </label>
+      {error && <p className="error">{error}</p>}
+      {resultado && (
+        <div className="nota" style={{ background: 'var(--color-superficie-alt)', padding: 10, borderRadius: 8 }}>
+          <p style={{ margin: 0 }}>
+            {resultado.totalEncontrados} partidos encontrados · {resultado.partidosCreados} nuevos
+            {' '}· {resultado.partidosActualizados} actualizados
+            {resultado.partidosIgnorados > 0 && ` · ${resultado.partidosIgnorados} no se han podido interpretar`}
+          </p>
+          {resultado.rivalesSinReconocer?.length > 0 && (
+            <p style={{ margin: '6px 0 0' }} className="texto-peligro">
+              No se ha podido identificar quién es el rival en: {resultado.rivalesSinReconocer.join(', ')}.
+              Revisa que "Nombre del club en la RFFM" esté escrito tal cual aparece allí.
+            </p>
+          )}
+        </div>
+      )}
+      <button type="submit" disabled={enviando}>{enviando ? 'Importando…' : 'Importar calendario'}</button>
+    </form>
+  );
+}
+
 function FilaPartido({ partido: p, puedeGestionar, onGuardarResultado, onEliminar, directoAbierto, onAlternarDirecto }) {
   const [propio, setPropio] = useState(p.resultadoPropio ?? '');
   const [rival, setRival] = useState(p.resultadoRival ?? '');
@@ -1082,7 +1107,10 @@ function FilaPartido({ partido: p, puedeGestionar, onGuardarResultado, onElimina
         {p.fecha?.slice(0, 10)}{p.hora ? ` ${p.hora.slice(0, 5)}` : ''}
         {p.enDirecto && <span className="texto-peligro"> · EN DIRECTO</span>}
       </td>
-      <td>{p.rival}{(p.competicionNombre || p.competicion) ? <span className="nota"> ({p.competicionNombre || p.competicion})</span> : ''}</td>
+      <td>
+        {p.escudoRival && <img src={p.escudoRival} alt="" className="escudo-rival-mini" />}
+        {p.rival}{(p.competicionNombre || p.competicion) ? <span className="nota"> ({p.competicionNombre || p.competicion})</span> : ''}
+      </td>
       <td>{p.localVisitante === 'local' ? 'Local' : 'Visitante'}</td>
       <td>
         {puedeGestionar ? (
@@ -1689,7 +1717,10 @@ function FormularioPartido({ equipoId, temporadaId, onCrear }) {
 // Para cualquier equipo, pero es la métrica clave en deportes individuales
 // (Muay Thai, pádel, tenis...), donde no hay partidos.
 
-function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
+// Exportado para reutilizarse en la página independiente de Asistencia
+// (pages/Asistencia.jsx), a la que también puede entrar el monitor sin
+// tener que pasar por la gestión completa de Equipos.
+export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
   const [sesiones, setSesiones] = useState([]);
   const [resumen, setResumen] = useState([]);
   const [cargando, setCargando] = useState(true);

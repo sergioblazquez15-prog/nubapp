@@ -33,8 +33,25 @@ const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'
 
 // Cualquiera que entrene o coordine (no un deportista con solo su propio
 // acceso). Se usa para recursos compartidos entre cuerpos técnicos, como
-// el banco de ejercicios: cualquiera puede consultarlo y aportar, pero un
-// deportista no debería ver la pizarra táctica de sus entrenadores.
-const PERSONAL_TECNICO = ['administrador', 'direccion_deportiva', 'coordinador', 'entrenador', 'monitor'];
+// el banco de ejercicios o la planificación: cualquiera puede consultarlo
+// y aportar, pero un deportista no debería ver la pizarra táctica de sus
+// entrenadores.
+//
+// IMPORTANTE: el monitor queda deliberadamente FUERA de este grupo. Su
+// perfil es el más limitado del club: solo consulta la ficha de los
+// deportistas de su equipo y marca asistencia (rutas deportistas.js y
+// sesiones.js, que ya filtran por equipo_personal sin necesitar este
+// middleware). No debe entrar al banco de ejercicios, la planificación,
+// ni la gestión de equipos/competiciones — si algún día necesita algo
+// más, se añade explícitamente ahí, nunca aquí.
+const PERSONAL_TECNICO = ['administrador', 'direccion_deportiva', 'coordinador', 'entrenador'];
 
-module.exports = { requiereRol, ACCESO_TOTAL_LECTURA, GESTION_DEPORTIVA, PERSONAL_TECNICO };
+// Perfiles que NUNCA deben ver datos económicos (cuotas, pagos). Además
+// de no estar en ACCESO_TOTAL_LECTURA (que ya los bloquea en cuotas.js),
+// se deja esta lista aparte para dejar constancia explícita de la regla:
+// coordinador y entrenador gestionan lo deportivo, nunca lo económico.
+const SIN_ACCESO_ECONOMICO = ['coordinador', 'entrenador', 'monitor'];
+
+module.exports = {
+  requiereRol, ACCESO_TOTAL_LECTURA, GESTION_DEPORTIVA, PERSONAL_TECNICO, SIN_ACCESO_ECONOMICO,
+};

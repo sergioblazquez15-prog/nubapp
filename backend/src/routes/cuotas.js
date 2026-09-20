@@ -10,9 +10,98 @@
 // aplicación de verdad.
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const ExcelJS = require('exceljs');
 const pool = require('../config/db');
 const { autenticar } = require('../middleware/auth');
 const { requiereRol, ACCESO_TOTAL_LECTURA } = require('../middleware/permisos');
+
+// El Excel de la secretaría se procesa en memoria (no hace falta guardarlo
+// en disco, es un volcado puntual) y se limita a 10 MB.
+const subidaExcel = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Nombres de columna aceptados (en minúsculas, sin acentos) para cada
+// campo, porque el Excel de la secretaría no sigue necesariamente los
+// mismos nombres que usamos internamente. Si el Excel real usa otras
+// cabeceras habrá que añadirlas aquí.
+const ALIAS_COLUMNAS = {
+  numeroSocio: ['nº socio', 'n socio', 'numero socio', 'num socio', 'socio', 'nº de socio'],
+  nombre: ['nombre', 'nombre deportista'],
+  apellidos: ['apellidos', 'apellido'],
+  nombreCompleto: ['nombre y apellidos', 'deportista', 'nombre completo'],
+  concepto: ['concepto', 'cuota', 'descripcion cuota'],
+  importe: ['importe', 'cantidad', 'importe pagado', 'pagado', 'euros', 'importe €'],
+  fecha: ['fecha', 'fecha pago', 'fecha de pago', 'fecha cobro'],
+  formaPago: ['forma de pago', 'forma pago', 'medio de pago', 'metodo de pago'],
+  descripcion: ['descripcion', 'observaciones', 'notas'],
+};
+
+function normalizarTexto(txt) {
+  return String(txt ?? '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().trim();
+}
+
+function detectarColumnas(filaCabecera) {
+  const mapa = {};
+  filaCabecera.eachCell((celda, colNumero) => {
+    const valor = normalizarTexto(celda.value);
+    for (const [campo, alias] of Object.entries(ALIAS_COLUMNAS)) {
+      if (alias.includes(valor)) mapa[campo] = colNumero;
+    }
+  });
+  return mapa;
+}
+
+const FORMAS_PAGO_VALIDAS = ['efectivo', 'domiciliado', 'tpv', 'transferencia'];
+function normalizarFormaPago(txt) {
+  const n = normalizarTexto(txt);
+  if (n.includes('efect')) return 'efectivo';
+  if (n.includes('domicil') || n.includes('recibo')) return 'domiciliado';
+  if (n.includes('tpv') || n.includes('tarjeta')) return 'tpv';
+  if (n.includes('transfer') || n.includes('bizum')) return 'transferencia';
+  return FORMAS_PAGO_VALIDAS.includes(n) ? n : 'transferencia';
+}
+
+function parsearFechaCelda(valor) {
+  if (!valor) return new Date().toISOString().slice(0, 10);
+  if (valor instanceof Date) return valor.toISOString().slice(0, 10);
+  const texto = String(valor).trim();
+  // admite dd/mm/aaaa, dd-mm-aaaa o aaaa-mm-dd
+  const conBarras = texto.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (conBarras) {
+    const [, d, m, a] = conBarras;
+    return `${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  const iso = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Extrae texto plano de una celda de ExcelJS, que puede venir como string,
+// número, fecha, fórmula ({formula, result}) o texto enriquecido
+// ({richText: [...]})
+function celdaTexto(valor) {
+  if (valor === null || valor === undefined) return '';
+  if (typeof valor === 'object') {
+    if (Array.isArray(valor.richText)) return valor.richText.map((t) => t.text).join('');
+    if (valor.text !== undefined) return String(valor.text);
+    if (valor.result !== undefined) return celdaTexto(valor.result);
+    if (valor instanceof Date) return valor.toISOString();
+  }
+  return String(valor);
+}
+
+// Importe robusto: admite número directo, "30", "30,00 €" o "1.234,56".
+function parsearImporte(valor) {
+  if (valor === null || valor === undefined || valor === '') return NaN;
+  if (typeof valor === 'number') return valor;
+  if (typeof valor === 'object' && valor.result !== undefined) return parsearImporte(valor.result);
+  let texto = celdaTexto(valor).replace(/[€\s]/g, '');
+  if (texto.includes(',') && texto.includes('.')) texto = texto.replace(/\./g, '').replace(',', '.');
+  else if (texto.includes(',')) texto = texto.replace(',', '.');
+  return Number(texto);
+}
 
 function filaACuota(fila) {
   return {
@@ -138,10 +227,271 @@ router.get('/estadisticas', autenticar, requiereRol(...ACCESO_TOTAL_LECTURA), as
   }
 });
 
+// GET /api/cuotas/exportar?temporadaId=&deporteId= - vuelca a un Excel
+// (.xlsx) las cuotas y los cobros ya registrados, para llevarlos a
+// contabilidad. Dos hojas: "Cuotas" (el mismo resumen que se ve en
+// pantalla: facturado/cobrado/pendiente por cuota) y "Pagos cobrados"
+// (cada cobro individual ya registrado, con fecha y forma de pago).
+router.get('/exportar', autenticar, requiereRol(...ACCESO_TOTAL_LECTURA), async (req, res) => {
+  const { temporadaId, deporteId } = req.query;
+  if (!temporadaId) return res.status(400).json({ error: 'temporadaId es obligatorio' });
+  try {
+    const condiciones = ['c.temporada_id = $1'];
+    const valores = [temporadaId];
+    if (deporteId) {
+      valores.push(deporteId);
+      condiciones.push(`c.deporte_id = $${valores.length}`);
+    }
+    const { rows: cuotas } = await pool.query(
+      `${CONSULTA_RESUMEN} WHERE ${condiciones.join(' AND ')} ORDER BY d.apellidos, d.nombre`,
+      valores
+    );
+    const { rows: pagos } = await pool.query(
+      `SELECT p.fecha, p.descripcion, p.importe, p.forma_pago,
+              d.nombre AS deportista_nombre, d.apellidos AS deportista_apellidos, d.numero_socio,
+              dep.nombre AS deporte_nombre, c.concepto
+       FROM cuotas_pagos p
+       JOIN cuotas c ON c.id = p.cuota_id
+       JOIN deportistas d ON d.id = c.deportista_id
+       JOIN deportes dep ON dep.id = c.deporte_id
+       WHERE ${condiciones.join(' AND ')}
+       ORDER BY p.fecha DESC`,
+      valores
+    );
+
+    const libro = new ExcelJS.Workbook();
+    libro.creator = 'NUBAPP';
+    libro.created = new Date();
+
+    const hojaCuotas = libro.addWorksheet('Cuotas');
+    hojaCuotas.columns = [
+      { header: 'Deportista', key: 'deportista', width: 28 },
+      { header: 'Nº socio', key: 'numeroSocio', width: 10 },
+      { header: 'Deporte', key: 'deporte', width: 16 },
+      { header: 'Concepto', key: 'concepto', width: 20 },
+      { header: 'Importe cuota', key: 'importeCuota', width: 14, style: { numFmt: '#,##0.00 "€"' } },
+      { header: 'Importe ropa', key: 'importeRopa', width: 14, style: { numFmt: '#,##0.00 "€"' } },
+      { header: 'Otros importes', key: 'otrosImportes', width: 14, style: { numFmt: '#,##0.00 "€"' } },
+      { header: 'Total a pagar', key: 'totalAPagar', width: 14, style: { numFmt: '#,##0.00 "€"' } },
+      { header: 'Total cobrado', key: 'totalPagado', width: 14, style: { numFmt: '#,##0.00 "€"' } },
+      { header: 'Pendiente', key: 'pendiente', width: 14, style: { numFmt: '#,##0.00 "€"' } },
+    ];
+    hojaCuotas.getRow(1).font = { bold: true };
+    for (const c of cuotas.map(filaACuota)) {
+      hojaCuotas.addRow({
+        deportista: `${c.deportistaNombre} ${c.deportistaApellidos}`,
+        numeroSocio: c.numeroSocio || '',
+        deporte: c.deporteNombre,
+        concepto: c.concepto,
+        importeCuota: c.importeCuota,
+        importeRopa: c.importeRopa,
+        otrosImportes: c.otrosImportes,
+        totalAPagar: c.totalAPagar,
+        totalPagado: c.totalPagado,
+        pendiente: c.pendiente,
+      });
+    }
+
+    const hojaPagos = libro.addWorksheet('Pagos cobrados');
+    hojaPagos.columns = [
+      { header: 'Fecha', key: 'fecha', width: 14 },
+      { header: 'Deportista', key: 'deportista', width: 28 },
+      { header: 'Nº socio', key: 'numeroSocio', width: 10 },
+      { header: 'Deporte', key: 'deporte', width: 16 },
+      { header: 'Concepto', key: 'concepto', width: 20 },
+      { header: 'Descripción', key: 'descripcion', width: 24 },
+      { header: 'Importe', key: 'importe', width: 12, style: { numFmt: '#,##0.00 "€"' } },
+      { header: 'Forma de pago', key: 'formaPago', width: 16 },
+    ];
+    hojaPagos.getRow(1).font = { bold: true };
+    for (const p of pagos) {
+      hojaPagos.addRow({
+        fecha: p.fecha ? new Date(p.fecha).toISOString().slice(0, 10) : '',
+        deportista: `${p.deportista_nombre} ${p.deportista_apellidos}`,
+        numeroSocio: p.numero_socio || '',
+        deporte: p.deporte_nombre,
+        concepto: p.concepto,
+        descripcion: p.descripcion || '',
+        importe: Number(p.importe),
+        formaPago: p.forma_pago,
+      });
+    }
+    const totalRow = hojaPagos.addRow({
+      deportista: '', concepto: '', descripcion: 'TOTAL COBRADO',
+      importe: pagos.reduce((s, p) => s + Number(p.importe), 0),
+    });
+    totalRow.font = { bold: true };
+
+    const nombreArchivo = `cuotas_${temporadaId}${deporteId ? `_deporte${deporteId}` : ''}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+    await libro.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al exportar las cuotas a Excel' });
+  }
+});
+
+// POST /api/cuotas/importar - la secretaría lleva los cobros en un Excel
+// propio; este endpoint lo sube (multipart, campo "archivo") junto con
+// temporadaId y deporteId, y traslada cada fila a la app: busca al
+// deportista (por Nº de socio o por nombre+apellidos, sin importar el
+// orden ni los acentos), encuentra o crea la cuota correspondiente (por
+// concepto) y registra el pago. Si el mismo pago ya se había importado
+// antes (misma cuota+fecha+importe) se omite, para poder reimportar el
+// mismo Excel sin duplicar cobros. Las filas que no se puedan casar con
+// ningún deportista se devuelven en "noEncontrados" para revisarlas a
+// mano. Solo administrador (es una operación que mueve dinero real).
+function claveNombre(nombre, apellidos) {
+  return normalizarTexto(`${nombre} ${apellidos}`).split(/\s+/).filter(Boolean).sort().join(' ');
+}
+
+router.post('/importar', autenticar, requiereRol('administrador'), subidaExcel.single('archivo'), async (req, res) => {
+  const { temporadaId, deporteId } = req.body;
+  if (!req.file) return res.status(400).json({ error: 'Falta el archivo Excel (campo "archivo")' });
+  if (!temporadaId || !deporteId) return res.status(400).json({ error: 'temporadaId y deporteId son obligatorios' });
+
+  let libro;
+  try {
+    libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(req.file.buffer);
+  } catch (err) {
+    return res.status(400).json({ error: 'No se ha podido leer el archivo. ¿Es un .xlsx válido?' });
+  }
+
+  const hoja = libro.worksheets[0];
+  if (!hoja) return res.status(400).json({ error: 'El Excel no tiene ninguna hoja' });
+
+  const columnas = detectarColumnas(hoja.getRow(1));
+  if (!columnas.numeroSocio && !columnas.nombre && !columnas.nombreCompleto) {
+    return res.status(400).json({
+      error: 'No se reconoce ninguna columna de nombre o número de socio en la primera fila. '
+        + 'Columnas que se entienden: "Nº socio", "Nombre" + "Apellidos" (o "Nombre y apellidos"), '
+        + '"Concepto", "Importe", "Fecha", "Forma de pago".',
+    });
+  }
+  if (!columnas.importe) {
+    return res.status(400).json({ error: 'No se reconoce ninguna columna de importe ("Importe", "Cantidad" o "Pagado").' });
+  }
+
+  try {
+    const { rows: deportistas } = await pool.query('SELECT id, nombre, apellidos, numero_socio FROM deportistas');
+    const porSocio = new Map();
+    const porNombre = new Map();
+    for (const d of deportistas) {
+      if (d.numero_socio) porSocio.set(String(d.numero_socio).trim(), d);
+      porNombre.set(claveNombre(d.nombre, d.apellidos), d);
+    }
+
+    const resultado = {
+      filasProcesadas: 0, pagosCreados: 0, pagosDuplicadosOmitidos: 0, cuotasCreadas: 0, noEncontrados: [],
+    };
+
+    const cliente = await pool.connect();
+    try {
+      for (let numFila = 2; numFila <= hoja.rowCount; numFila++) {
+        const fila = hoja.getRow(numFila);
+        if (!fila || fila.cellCount === 0) continue;
+        const val = (campo) => (columnas[campo] ? fila.getCell(columnas[campo]).value : null);
+
+        const importe = parsearImporte(val('importe'));
+        if (!importe || Number.isNaN(importe)) continue; // fila vacía o sin importe: se ignora sin más
+
+        resultado.filasProcesadas++;
+
+        const numeroSocio = celdaTexto(val('numeroSocio')).trim();
+        let deportista = numeroSocio ? porSocio.get(numeroSocio) : null;
+        if (!deportista) {
+          const nombreCompleto = celdaTexto(val('nombreCompleto')).trim();
+          const nombre = celdaTexto(val('nombre')).trim();
+          const apellidos = celdaTexto(val('apellidos')).trim();
+          const clave = nombreCompleto
+            ? normalizarTexto(nombreCompleto).split(/\s+/).filter(Boolean).sort().join(' ')
+            : (nombre || apellidos) ? claveNombre(nombre, apellidos) : null;
+          if (clave) deportista = porNombre.get(clave);
+        }
+
+        if (!deportista) {
+          resultado.noEncontrados.push({
+            fila: numFila,
+            texto: numeroSocio
+              ? `Nº socio ${numeroSocio}`
+              : (celdaTexto(val('nombreCompleto')) || `${celdaTexto(val('nombre'))} ${celdaTexto(val('apellidos'))}`).trim(),
+          });
+          continue;
+        }
+
+        const concepto = (celdaTexto(val('concepto')) || 'Importado de Excel').trim();
+        const fecha = parsearFechaCelda(val('fecha'));
+        const formaPago = normalizarFormaPago(celdaTexto(val('formaPago')));
+        const descripcion = celdaTexto(val('descripcion')).trim() || `Importado de Excel (fila ${numFila})`;
+
+        await cliente.query('BEGIN');
+        try {
+          const cuotaExistente = await cliente.query(
+            'SELECT id FROM cuotas WHERE deportista_id = $1 AND deporte_id = $2 AND temporada_id = $3 AND concepto = $4',
+            [deportista.id, deporteId, temporadaId, concepto]
+          );
+          let cuotaId = cuotaExistente.rows[0]?.id;
+          if (!cuotaId) {
+            const creada = await cliente.query(
+              `INSERT INTO cuotas (deportista_id, deporte_id, temporada_id, concepto, importe_cuota)
+               VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+              [deportista.id, deporteId, temporadaId, concepto, importe]
+            );
+            cuotaId = creada.rows[0].id;
+            resultado.cuotasCreadas++;
+          }
+
+          const pagoExistente = await cliente.query(
+            'SELECT 1 FROM cuotas_pagos WHERE cuota_id = $1 AND fecha = $2 AND importe = $3',
+            [cuotaId, fecha, importe]
+          );
+          if (pagoExistente.rows[0]) {
+            resultado.pagosDuplicadosOmitidos++;
+          } else {
+            await cliente.query(
+              `INSERT INTO cuotas_pagos (cuota_id, fecha, descripcion, importe, forma_pago, registrado_por)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [cuotaId, fecha, descripcion, importe, formaPago, req.usuario.id]
+            );
+            resultado.pagosCreados++;
+          }
+          await cliente.query('COMMIT');
+        } catch (err) {
+          await cliente.query('ROLLBACK');
+          console.error(`Error importando fila ${numFila}:`, err);
+          resultado.noEncontrados.push({ fila: numFila, texto: `Error al guardar: ${err.message}` });
+        }
+      }
+    } finally {
+      cliente.release();
+    }
+
+    res.json(resultado);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al importar el Excel de cuotas' });
+  }
+});
+
 // GET /api/cuotas/deportista/:deportistaId - historial de cuotas de UN
 // deportista (todas las temporadas), para pintarlo dentro de su ficha.
-router.get('/deportista/:deportistaId', autenticar, requiereRol(...ACCESO_TOTAL_LECTURA), async (req, res) => {
+// Administración/dirección deportiva ven las cuotas de cualquiera; un
+// deportista que entra con su propio usuario solo puede ver las SUYAS
+// (nunca las de otro), para que pueda consultar en la app lo que tiene
+// pendiente y lo que ya ha pagado sin necesitar acceso económico general.
+router.get('/deportista/:deportistaId', autenticar, async (req, res) => {
+  const { roles, id: usuarioId } = req.usuario;
   try {
+    if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
+      const { rows: propio } = await pool.query(
+        'SELECT 1 FROM deportistas WHERE id = $1 AND usuario_id = $2',
+        [req.params.deportistaId, usuarioId]
+      );
+      if (!propio[0]) return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
     const { rows } = await pool.query(
       `${CONSULTA_RESUMEN} WHERE c.deportista_id = $1 ORDER BY c.creado_en DESC`,
       [req.params.deportistaId]
@@ -154,11 +504,21 @@ router.get('/deportista/:deportistaId', autenticar, requiereRol(...ACCESO_TOTAL_
 });
 
 // GET /api/cuotas/:id - detalle completo (previsión mensual + pagos), para
-// abrir una cuota concreta y gestionarla.
-router.get('/:id', autenticar, requiereRol(...ACCESO_TOTAL_LECTURA), async (req, res) => {
+// abrir una cuota concreta y gestionarla. Igual que arriba, un deportista
+// puede abrir el detalle de SU PROPIA cuota (para ver sus pagos), nunca
+// la de otro.
+router.get('/:id', autenticar, async (req, res) => {
+  const { roles, id: usuarioId } = req.usuario;
   try {
     const { rows } = await pool.query(`${CONSULTA_RESUMEN} WHERE c.id = $1`, [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Cuota no encontrada' });
+    if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
+      const { rows: propio } = await pool.query(
+        'SELECT 1 FROM deportistas WHERE id = $1 AND usuario_id = $2',
+        [rows[0].deportista_id, usuarioId]
+      );
+      if (!propio[0]) return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
     const prevision = await pool.query(
       'SELECT mes, importe FROM cuotas_prevision_mensual WHERE cuota_id = $1 ORDER BY mes',
       [req.params.id]

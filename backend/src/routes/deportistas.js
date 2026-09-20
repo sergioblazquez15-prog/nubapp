@@ -34,6 +34,7 @@ const subidaFoto = multer({
 function filaADeportista(fila) {
   return {
     id: fila.id,
+    usuarioId: fila.usuario_id,
     numeroSocio: fila.numero_socio,
     nombreDeportivo: fila.nombre_deportivo,
     nombre: fila.nombre,
@@ -70,6 +71,17 @@ const CONSULTA_BASE = `
   LEFT JOIN deportista_deportes dd ON dd.deportista_id = d.id AND dd.fecha_baja IS NULL
   LEFT JOIN deportes dep ON dep.id = dd.deporte_id
 `;
+
+// Comprueba si el usuario que pregunta ES este deportista (login propio
+// del deportista, no de su entrenador). Así puede abrir su propia ficha
+// aunque no tenga ningún equipo_personal asignado.
+async function esElMismo(usuarioId, deportistaId) {
+  const { rows } = await pool.query(
+    'SELECT 1 FROM deportistas WHERE id = $1 AND usuario_id = $2',
+    [deportistaId, usuarioId]
+  );
+  return rows.length > 0;
+}
 
 // Comprueba si un entrenador/coordinador tiene a este deportista en
 // alguno de sus equipos (mismo criterio que el filtrado del listado).
@@ -123,11 +135,20 @@ router.get('/', autenticar, async (req, res) => {
   }
 
   if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
-    const marcador = nuevoParametro(usuarioId);
-    condiciones.push(`EXISTS (
-      SELECT 1 FROM deportista_equipo_temporada det
-      JOIN equipo_personal ep ON ep.equipo_id = det.equipo_id
-      WHERE det.deportista_id = d.id AND ep.usuario_id = ${marcador}
+    // Personal técnico (coordinador/entrenador/monitor): solo los suyos.
+    // Un usuario con rol "deportista" no tiene equipo_personal, así que
+    // esta condición sola le devolvería la lista vacía — se añade además
+    // "es él mismo" para que un deportista que entra con su propio
+    // usuario se vea a sí mismo (y solo a sí mismo) en su ficha.
+    const marcadorEquipo = nuevoParametro(usuarioId);
+    const marcadorPropio = nuevoParametro(usuarioId);
+    condiciones.push(`(
+      EXISTS (
+        SELECT 1 FROM deportista_equipo_temporada det
+        JOIN equipo_personal ep ON ep.equipo_id = det.equipo_id
+        WHERE det.deportista_id = d.id AND ep.usuario_id = ${marcadorEquipo}
+      )
+      OR d.usuario_id = ${marcadorPropio}
     )`);
   }
 
@@ -149,7 +170,7 @@ router.get('/:id', autenticar, async (req, res) => {
 
   try {
     if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
-      const autorizado = await tieneAccesoPorEquipo(usuarioId, req.params.id);
+      const autorizado = (await tieneAccesoPorEquipo(usuarioId, req.params.id)) || (await esElMismo(usuarioId, req.params.id));
       if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
     }
 
@@ -359,7 +380,7 @@ router.get('/:id/historial-deportes', autenticar, async (req, res) => {
   const { roles, id: usuarioId } = req.usuario;
   try {
     if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
-      const autorizado = await tieneAccesoPorEquipo(usuarioId, req.params.id);
+      const autorizado = (await tieneAccesoPorEquipo(usuarioId, req.params.id)) || (await esElMismo(usuarioId, req.params.id));
       if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
     }
     const { rows } = await pool.query(
@@ -376,6 +397,41 @@ router.get('/:id/historial-deportes', autenticar, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al consultar el historial de deportes' });
+  }
+});
+
+// GET /api/deportistas/:id/ficha-tecnica - ficha técnica (posición,
+// dorsal, valoraciones) de este deportista en cada equipo de la
+// temporada activa. La ficha técnica en sí vive por equipo/temporada
+// (fichas_tecnicas, ver equipos.js) porque cambia cada año; esto solo la
+// reúne por deportista para poder pintar el esquema del campo también
+// aquí, en su ficha individual, sin tener que ir a Plantillas.
+router.get('/:id/ficha-tecnica', autenticar, async (req, res) => {
+  const { roles, id: usuarioId } = req.usuario;
+  try {
+    if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
+      const autorizado = (await tieneAccesoPorEquipo(usuarioId, req.params.id)) || (await esElMismo(usuarioId, req.params.id));
+      if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+    const { rows } = await pool.query(
+      `SELECT e.id AS "equipoId", e.nombre AS "equipoNombre", dep.nombre AS "deporteNombre",
+              det.dorsal, ft.posicion_principal AS "posicionPrincipal", ft.posicion_secundaria AS "posicionSecundaria",
+              ft.valoracion_tecnica AS "valoracionTecnica", ft.valoracion_tactica AS "valoracionTactica",
+              ft.valoracion_fisica AS "valoracionFisica", ft.valoracion_psicologica AS "valoracionPsicologica",
+              ft.valoracion_personalidad AS "valoracionPersonalidad"
+       FROM deportista_equipo_temporada det
+       JOIN equipos e ON e.id = det.equipo_id
+       JOIN deportes dep ON dep.id = e.deporte_id
+       JOIN temporadas t ON t.id = det.temporada_id
+       LEFT JOIN fichas_tecnicas ft ON ft.deportista_equipo_temp_id = det.id
+       WHERE det.deportista_id = $1 AND t.es_principal = TRUE AND e.inactivo = FALSE
+       ORDER BY e.nombre`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al consultar la ficha técnica' });
   }
 });
 

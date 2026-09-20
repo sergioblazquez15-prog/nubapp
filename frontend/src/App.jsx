@@ -8,8 +8,21 @@ import Cuotas from './pages/Cuotas';
 import Ejercicios from './pages/Ejercicios';
 import Metodologia from './pages/Metodologia';
 import Competiciones from './pages/Competiciones';
+import Asistencia from './pages/Asistencia';
+import Scout from './pages/Scout';
+import TraspasoTemporada from './pages/TraspasoTemporada';
 import { Layout } from './components/Layout';
 import { RutaProtegida } from './components/RutaProtegida';
+
+// Perfiles con acceso amplio a "Dirección deportiva" (banco de
+// ejercicios, planificación, plantillas, competición). El monitor queda
+// fuera de este grupo a propósito: su perfil solo entra a Fichas
+// individuales y Asistencia (ver PERSONAL_TECNICO_Y_MONITOR más abajo),
+// nunca a la gestión de equipos ni al banco de ejercicios.
+const PERSONAL_TECNICO = ['administrador', 'direccion_deportiva', 'coordinador', 'entrenador'];
+const PERSONAL_TECNICO_Y_MONITOR = [...PERSONAL_TECNICO, 'monitor'];
+const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
+const ACCESO_TOTAL_LECTURA = ['administrador', 'direccion_deportiva'];
 
 export default function App() {
   return (
@@ -24,12 +37,34 @@ export default function App() {
         }
       >
         <Route path="/" element={<Inicio />} />
-        <Route path="/deportistas" element={<Deportistas />} />
-        <Route path="/equipos" element={<Equipos />} />
+        <Route
+          path="/deportistas"
+          element={
+            <RutaProtegida roles={PERSONAL_TECNICO_Y_MONITOR}>
+              <Deportistas />
+            </RutaProtegida>
+          }
+        />
+        <Route
+          path="/asistencia"
+          element={
+            <RutaProtegida roles={PERSONAL_TECNICO_Y_MONITOR}>
+              <Asistencia />
+            </RutaProtegida>
+          }
+        />
+        <Route
+          path="/equipos"
+          element={
+            <RutaProtegida roles={PERSONAL_TECNICO}>
+              <Equipos />
+            </RutaProtegida>
+          }
+        />
         <Route
           path="/usuarios"
           element={
-            <RutaProtegida roles={['administrador', 'direccion_deportiva']}>
+            <RutaProtegida roles={ACCESO_TOTAL_LECTURA}>
               <Usuarios />
             </RutaProtegida>
           }
@@ -37,7 +72,7 @@ export default function App() {
         <Route
           path="/cuotas"
           element={
-            <RutaProtegida roles={['administrador', 'direccion_deportiva']}>
+            <RutaProtegida roles={ACCESO_TOTAL_LECTURA}>
               <Cuotas />
             </RutaProtegida>
           }
@@ -45,7 +80,7 @@ export default function App() {
         <Route
           path="/ejercicios"
           element={
-            <RutaProtegida roles={['administrador', 'direccion_deportiva', 'coordinador', 'entrenador', 'monitor']}>
+            <RutaProtegida roles={PERSONAL_TECNICO}>
               <Ejercicios />
             </RutaProtegida>
           }
@@ -53,7 +88,7 @@ export default function App() {
         <Route
           path="/metodologia"
           element={
-            <RutaProtegida roles={['administrador', 'direccion_deportiva', 'coordinador', 'entrenador', 'monitor']}>
+            <RutaProtegida roles={PERSONAL_TECNICO}>
               <Metodologia />
             </RutaProtegida>
           }
@@ -61,8 +96,24 @@ export default function App() {
         <Route
           path="/competiciones"
           element={
-            <RutaProtegida roles={['administrador', 'direccion_deportiva', 'coordinador', 'entrenador', 'monitor']}>
+            <RutaProtegida roles={PERSONAL_TECNICO}>
               <Competiciones />
+            </RutaProtegida>
+          }
+        />
+        <Route
+          path="/scout"
+          element={
+            <RutaProtegida roles={ACCESO_TOTAL_LECTURA}>
+              <Scout />
+            </RutaProtegida>
+          }
+        />
+        <Route
+          path="/traspaso-temporada"
+          element={
+            <RutaProtegida roles={GESTION_DEPORTIVA}>
+              <TraspasoTemporada />
             </RutaProtegida>
           }
         />

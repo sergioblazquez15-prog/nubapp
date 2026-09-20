@@ -7,7 +7,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const { autenticar } = require('../middleware/auth');
-const { ACCESO_TOTAL_LECTURA } = require('../middleware/permisos');
+const { ACCESO_TOTAL_LECTURA, PERSONAL_TECNICO } = require('../middleware/permisos');
 
 function proximaFecha(fechaNacimiento, hoy) {
   const fn = new Date(fechaNacimiento);
@@ -115,12 +115,106 @@ router.get('/resumen', autenticar, async (req, res) => {
       }));
     }
 
+    // ---- contadores para las tarjetas de arriba (deportistas activos,
+    // equipos) y sesiones del mes para el calendario visual ----
+    let totalEquipos = 0;
+    let sesionesDelMes = [];
+    let sesionesEstaSemana = 0;
+    let partidosDelMes = [];
+
+    if (temporada) {
+      const filtroEqPropio = tieneAccesoTotal
+        ? ''
+        : `AND EXISTS (SELECT 1 FROM equipo_personal ep WHERE ep.equipo_id = e.id AND ep.usuario_id = $2)`;
+
+      const { rows: equiposRows } = await pool.query(
+        `SELECT COUNT(*)::int AS total FROM equipos e
+         WHERE e.temporada_id = $1 AND e.inactivo = FALSE ${filtroEqPropio}`,
+        tieneAccesoTotal ? [temporada.id] : [temporada.id, usuarioId]
+      );
+      totalEquipos = equiposRows[0]?.total || 0;
+
+      const inicioMes = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1));
+      const finMes = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, 0));
+      const { rows: sesionesRows } = await pool.query(
+        `SELECT s.fecha, s.titulo, e.nombre AS equipo_nombre
+         FROM sesiones s
+         JOIN equipos e ON e.id = s.equipo_id
+         WHERE s.temporada_id = $1 AND s.cancelada = FALSE
+           AND s.fecha BETWEEN $2 AND $3 ${filtroEqPropio}
+         ORDER BY s.fecha`,
+        tieneAccesoTotal
+          ? [temporada.id, inicioMes.toISOString().slice(0, 10), finMes.toISOString().slice(0, 10)]
+          : [temporada.id, inicioMes.toISOString().slice(0, 10), finMes.toISOString().slice(0, 10), usuarioId]
+      );
+      sesionesDelMes = sesionesRows.map((s) => ({
+        fecha: s.fecha,
+        titulo: s.titulo,
+        equipoNombre: s.equipo_nombre,
+      }));
+      sesionesEstaSemana = sesionesDelMes.filter((s) => {
+        const f = new Date(s.fecha);
+        return f >= hoy && f <= enUnaSemana;
+      }).length;
+
+      // Partidos del mes (incluye los importados del calendario de
+      // competición, con su escudo del rival si lo trajo la importación),
+      // para que también se vean en el calendario visual de Inicio.
+      const { rows: partidosRows } = await pool.query(
+        `SELECT p.fecha, p.rival, p.local_visitante, p.escudo_rival, p.jugado,
+                p.resultado_propio, p.resultado_rival, e.nombre AS equipo_nombre
+         FROM partidos p
+         JOIN equipos e ON e.id = p.equipo_id
+         WHERE p.temporada_id = $1
+           AND p.fecha BETWEEN $2 AND $3 ${filtroEqPropio}
+         ORDER BY p.fecha`,
+        tieneAccesoTotal
+          ? [temporada.id, inicioMes.toISOString().slice(0, 10), finMes.toISOString().slice(0, 10)]
+          : [temporada.id, inicioMes.toISOString().slice(0, 10), finMes.toISOString().slice(0, 10), usuarioId]
+      );
+      partidosDelMes = partidosRows.map((p) => ({
+        fecha: p.fecha,
+        rival: p.rival,
+        localVisitante: p.local_visitante,
+        escudoRival: p.escudo_rival,
+        jugado: p.jugado,
+        resultadoPropio: p.resultado_propio,
+        resultadoRival: p.resultado_rival,
+        equipoNombre: p.equipo_nombre,
+      }));
+    }
+
+    // ---- rotación de ejercicios: solo para quien tiene acceso al banco
+    // (el monitor no entra al banco de ejercicios, así que no se le manda) ----
+    let rotacionEjercicios = [];
+    if (roles.some((r) => PERSONAL_TECNICO.includes(r))) {
+      const { rows } = await pool.query(
+        `SELECT e.id, e.titulo, e.tipologia, e.naturaleza, dep.nombre AS deporte_nombre
+         FROM ejercicios e
+         JOIN deportes dep ON dep.id = e.deporte_id
+         ORDER BY random() LIMIT 4`
+      );
+      rotacionEjercicios = rows.map((e) => ({
+        id: e.id,
+        titulo: e.titulo,
+        tipologia: e.tipologia,
+        naturaleza: e.naturaleza,
+        deporteNombre: e.deporte_nombre,
+      }));
+    }
+
     res.json({
       temporada: temporada ? { id: temporada.id, nombre: temporada.nombre } : null,
+      totalDeportistasActivos: deportistas.length,
+      totalEquipos,
+      sesionesEstaSemana,
+      sesionesDelMes,
+      partidosDelMes,
       cumpleanosSemana,
       lesionados,
       resultadosRecientes,
       faltasSinJustificar,
+      rotacionEjercicios,
     });
   } catch (err) {
     console.error(err);

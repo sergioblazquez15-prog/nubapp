@@ -25,6 +25,8 @@ function filaAEquipo(fila) {
     nombre: fila.nombre,
     categoria: fila.categoria,
     clubNombre: fila.club_nombre,
+    calendarioExternoUrl: fila.calendario_externo_url,
+    nombreClubCompeticion: fila.nombre_club_competicion,
     inactivo: fila.inactivo,
     numeroDeportistas: fila.numero_deportistas !== undefined ? Number(fila.numero_deportistas) : undefined,
   };
@@ -179,17 +181,22 @@ router.post('/', autenticar, requiereRol(...GESTION_DEPORTIVA), async (req, res)
 
 // PUT /api/equipos/:id - editar datos básicos
 router.put('/:id', autenticar, requiereRol(...GESTION_DEPORTIVA), async (req, res) => {
-  const { nombre, categoria, clubNombre, inactivo } = req.body;
+  const { nombre, categoria, clubNombre, inactivo, nombreClubCompeticion, calendarioExternoUrl } = req.body;
   try {
     const { rows } = await pool.query(
       `UPDATE equipos SET
          nombre      = COALESCE($1, nombre),
          categoria   = COALESCE($2, categoria),
          club_nombre = COALESCE($3, club_nombre),
-         inactivo    = COALESCE($4, inactivo)
-       WHERE id = $5
+         inactivo    = COALESCE($4, inactivo),
+         nombre_club_competicion = COALESCE($5, nombre_club_competicion),
+         calendario_externo_url  = COALESCE($6, calendario_externo_url)
+       WHERE id = $7
        RETURNING id`,
-      [nombre ?? null, categoria ?? null, clubNombre ?? null, typeof inactivo === 'boolean' ? inactivo : null, req.params.id]
+      [
+        nombre ?? null, categoria ?? null, clubNombre ?? null, typeof inactivo === 'boolean' ? inactivo : null,
+        nombreClubCompeticion ?? null, calendarioExternoUrl ?? null, req.params.id,
+      ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Equipo no encontrado' });
     res.json({ ok: true });

@@ -7,11 +7,13 @@
 // Dar de baja es siempre baja LÓGICA: no se borra ni se toca ningún dato
 // (nº de socio incluido), solo se marca como inactivo. Por eso se puede
 // "dar de alta" otra vez sin perder nada de su historial.
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { BarraCuotaMini } from '../components/BarraCuota';
 import { colorEtiqueta, iniciales } from '../utils/colorEtiqueta';
+import { EsquemaPosiciones, catalogoPosicionesPara, nombrePosicion } from '../components/EsquemaPosiciones';
+import { BotonInforme, CabeceraInforme } from '../components/Informe';
 
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
 
@@ -384,23 +386,32 @@ function FormularioDeportista({ deportesDisponibles, onCreado }) {
 // ---------- ficha completa: datos editables + historial de deportes ----------
 
 function DeportistaDetalle({ deportistaId, puedeGestionar, onVolver }) {
-  const { tieneRol } = useAuth();
-  const puedeVerCuotas = tieneRol('administrador', 'direccion_deportiva');
+  const { usuario, tieneRol } = useAuth();
   const [deportista, setDeportista] = useState(null);
   const [historial, setHistorial] = useState([]);
+  const [fichaTecnica, setFichaTecnica] = useState([]);
   const [deportesDisponibles, setDeportesDisponibles] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
 
+  // Administración/dirección deportiva ven las cuotas de cualquiera; un
+  // deportista que entra con su propio usuario ve las suyas (el backend
+  // hace la misma comprobación, esto es solo para no mostrar la sección
+  // a quien el servidor le va a devolver un 403 de todas formas).
+  const puedeVerCuotas = tieneRol('administrador', 'direccion_deportiva')
+    || (deportista && usuario && deportista.usuarioId === usuario.id);
+
   async function cargarTodo() {
     setCargando(true);
     try {
-      const [datos, periodos] = await Promise.all([
+      const [datos, periodos, ficha] = await Promise.all([
         api.get(`/deportistas/${deportistaId}`),
         api.get(`/deportistas/${deportistaId}/historial-deportes`),
+        api.get(`/deportistas/${deportistaId}/ficha-tecnica`).catch(() => []),
       ]);
       setDeportista(datos);
       setHistorial(periodos);
+      setFichaTecnica(ficha);
       setError('');
     } catch (err) {
       setError(err.message);
@@ -446,6 +457,8 @@ function DeportistaDetalle({ deportistaId, puedeGestionar, onVolver }) {
         ‹ Volver a deportistas
       </button>
 
+      <CabeceraInforme titulo="Ficha del deportista" subtitulo={`${deportista.nombre} ${deportista.apellidos}`} />
+
       <div className="cabecera cabecera-ficha-persona">
         <span className={`avatar-circulo avatar-circulo-grande ${colorEtiqueta(deportista.nombre + deportista.apellidos)}`}>
           {iniciales(deportista.nombre, deportista.apellidos)}
@@ -464,6 +477,9 @@ function DeportistaDetalle({ deportistaId, puedeGestionar, onVolver }) {
             ))}
           </div>
         </div>
+        <div className="acciones-fila" style={{ marginLeft: 'auto' }}>
+          <BotonInforme titulo={`ficha ${deportista.nombre} ${deportista.apellidos}`} />
+        </div>
       </div>
 
       <div className="bloque-ficha">
@@ -474,6 +490,37 @@ function DeportistaDetalle({ deportistaId, puedeGestionar, onVolver }) {
           <DatosGeneralesSoloLectura deportista={deportista} />
         )}
       </div>
+
+      {fichaTecnica.length > 0 && (
+        <div className="bloque-ficha">
+          <h2>⚽ Posición</h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
+            {fichaTecnica.map((ft) => {
+              const catalogo = catalogoPosicionesPara(ft.deporteNombre);
+              if (!catalogo) return null;
+              return (
+                <div key={ft.equipoId} className="esquema-posiciones-envoltorio">
+                  <p className="nota" style={{ marginBottom: 6 }}>
+                    <strong>{ft.equipoNombre}</strong> · {ft.deporteNombre}{ft.dorsal ? ` · dorsal ${ft.dorsal}` : ''}
+                  </p>
+                  <EsquemaPosiciones
+                    posiciones={catalogo}
+                    tipoCancha={ft.deporteNombre === 'Baloncesto' ? 'baloncesto' : 'futbol'}
+                    posicionPrincipal={ft.posicionPrincipal}
+                    posicionSecundaria={ft.posicionSecundaria}
+                  />
+                  <p className="nota">
+                    {ft.posicionPrincipal
+                      ? <>Principal: <strong>{nombrePosicion(ft.deporteNombre, ft.posicionPrincipal)}</strong></>
+                      : 'Todavía sin posición marcada'}
+                    {ft.posicionSecundaria && <> · Secundaria: <strong>{nombrePosicion(ft.deporteNombre, ft.posicionSecundaria)}</strong></>}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="bloque-ficha">
         <h2>📅 Historial de deportes practicados</h2>
@@ -528,6 +575,7 @@ function DeportistaDetalle({ deportistaId, puedeGestionar, onVolver }) {
 function HistoricoCuotas({ deportistaId }) {
   const [cuotas, setCuotas] = useState(null);
   const [error, setError] = useState('');
+  const [abiertaId, setAbiertaId] = useState(null);
 
   useEffect(() => {
     api.get(`/cuotas/deportista/${deportistaId}`)
@@ -550,21 +598,62 @@ function HistoricoCuotas({ deportistaId }) {
             <th>Pagado</th>
             <th>Pendiente</th>
             <th>Progreso</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {cuotas.map((c) => (
-            <tr key={c.id}>
-              <td>{c.deporteNombre}</td>
-              <td>{c.concepto}</td>
-              <td>{c.totalAPagar.toFixed(2)} €</td>
-              <td>{c.totalPagado.toFixed(2)} €</td>
-              <td className={c.pendiente > 0.001 ? 'texto-peligro' : ''}>{c.pendiente.toFixed(2)} €</td>
-              <td><BarraCuotaMini pagado={c.totalPagado} total={c.totalAPagar} /></td>
-            </tr>
+            <Fragment key={c.id}>
+              <tr>
+                <td>{c.deporteNombre}</td>
+                <td>{c.concepto}</td>
+                <td>{c.totalAPagar.toFixed(2)} €</td>
+                <td>{c.totalPagado.toFixed(2)} €</td>
+                <td className={c.pendiente > 0.001 ? 'texto-peligro' : ''}>{c.pendiente.toFixed(2)} €</td>
+                <td><BarraCuotaMini pagado={c.totalPagado} total={c.totalAPagar} /></td>
+                <td>
+                  <button className="boton-enlace" onClick={() => setAbiertaId(abiertaId === c.id ? null : c.id)}>
+                    {abiertaId === c.id ? 'Cerrar' : 'Ver pagos'}
+                  </button>
+                </td>
+              </tr>
+              {abiertaId === c.id && (
+                <tr>
+                  <td colSpan={7}><PagosDeCuota cuotaId={c.id} /></td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function PagosDeCuota({ cuotaId }) {
+  const [detalle, setDetalle] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get(`/cuotas/${cuotaId}`).then(setDetalle).catch((err) => setError(err.message));
+  }, [cuotaId]);
+
+  if (error) return <p className="nota">{error}</p>;
+  if (!detalle) return <p className="cargando">Cargando…</p>;
+  if (detalle.pagos.length === 0) return <p className="nota">Todavía no hay pagos registrados en esta cuota.</p>;
+
+  const ETIQUETAS_FORMA_PAGO = { efectivo: 'Efectivo', domiciliado: 'Domiciliado', tpv: 'TPV', transferencia: 'Transferencia' };
+
+  return (
+    <div className="lista-dashboard" style={{ padding: '8px 0' }}>
+      {detalle.pagos.map((p) => (
+        <div key={p.id} className="fila-inicio">
+          <span className="nota fila-inicio-extra">{p.fecha?.slice(0, 10)}</span>
+          <span>{p.descripcion || 'Pago'}</span>
+          <span className="etiqueta-suave">{ETIQUETAS_FORMA_PAGO[p.formaPago] || p.formaPago}</span>
+          <span className="fila-inicio-extra" style={{ fontWeight: 700 }}>+{Number(p.importe).toFixed(2)} €</span>
+        </div>
+      ))}
     </div>
   );
 }

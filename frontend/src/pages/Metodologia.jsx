@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { colorEtiqueta } from '../utils/colorEtiqueta';
+import { BotonInforme, CabeceraInforme } from '../components/Informe';
 
 export default function Metodologia() {
   const { tieneRol } = useAuth();
@@ -217,16 +218,19 @@ function DetalleDocumento({ documentoId, puedeEditar, onVolver, onEliminar }) {
   return (
     <div className="pantalla-metodologia-detalle">
       <button className="boton-enlace" onClick={onVolver}>‹ Volver a metodología</button>
+      <CabeceraInforme titulo="Metodología" subtitulo={documento.titulo} />
 
       <div className="cabecera">
         <h1>📚 {documento.titulo}</h1>
-        {puedeEditar && (
-          <div>
-            <button onClick={() => setEditando((v) => !v)}>{editando ? 'Cancelar' : 'Editar'}</button>
-            {' '}
-            <button className="boton-peligro" onClick={onEliminar}>Eliminar</button>
-          </div>
-        )}
+        <div className="acciones-fila">
+          <BotonInforme titulo={`metodologia ${documento.titulo}`} />
+          {puedeEditar && (
+            <>
+              <button onClick={() => setEditando((v) => !v)}>{editando ? 'Cancelar' : 'Editar'}</button>
+              <button className="boton-peligro" onClick={onEliminar}>Eliminar</button>
+            </>
+          )}
+        </div>
       </div>
       <span className={`etiqueta-suave ${colorEtiqueta(documento.deporteNombre || 'General')}`}>
         {documento.deporteNombre ? documento.deporteNombre : 'Documento general del club'}

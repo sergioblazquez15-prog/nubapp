@@ -40,12 +40,40 @@ async function peticionArchivo(ruta, formData) {
   return datos;
 }
 
+// Para descargar archivos generados por el backend (ej: Excel de cuotas)
+// que requieren el token de autenticación - un <a href> normal no puede
+// mandar el header Authorization, así que se pide como blob y se fuerza
+// la descarga en el navegador con un enlace temporal.
+async function peticionDescarga(ruta, nombreArchivoPorDefecto) {
+  const token = localStorage.getItem('nubapp_token');
+  const respuesta = await fetch(`${BASE_URL}${ruta}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!respuesta.ok) {
+    const datos = await respuesta.json().catch(() => null);
+    throw new Error(datos?.error || `Error ${respuesta.status}`);
+  }
+  const disposicion = respuesta.headers.get('Content-Disposition') || '';
+  const coincidencia = disposicion.match(/filename="?([^"]+)"?/);
+  const nombreArchivo = coincidencia ? coincidencia[1] : nombreArchivoPorDefecto;
+  const blob = await respuesta.blob();
+  const url = window.URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombreArchivo;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export const api = {
   get: (ruta) => peticion(ruta),
   post: (ruta, body) => peticion(ruta, { method: 'POST', body }),
   put: (ruta, body) => peticion(ruta, { method: 'PUT', body }),
   delete: (ruta) => peticion(ruta, { method: 'DELETE' }),
   postFile: (ruta, formData) => peticionArchivo(ruta, formData),
+  descargar: (ruta, nombreArchivoPorDefecto) => peticionDescarga(ruta, nombreArchivoPorDefecto),
 };
 
 // BASE_URL suele ser ".../api"; los archivos subidos (fotos) se sirven

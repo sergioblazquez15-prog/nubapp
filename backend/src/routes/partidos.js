@@ -37,6 +37,8 @@ function filaAPartido(fila) {
     resultadoRival: fila.resultado_rival,
     jugado: fila.jugado,
     notas: fila.notas,
+    escudoRival: fila.escudo_rival,
+    fuenteExterna: fila.fuente_externa,
     enDirecto: fila.en_directo,
     periodo: fila.periodo,
     configuracionPartes: fila.configuracion_partes,
@@ -638,6 +640,284 @@ router.delete('/:id', autenticar, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al eliminar el partido' });
+  }
+});
+
+// --- Importar calendario desde una URL externa (RFFM) -----------------
+//
+// La RFFM (Real Federación de Fútbol de Madrid) publica el calendario de
+// cada grupo/competición en una página que, al inspeccionarla, resultó
+// ser una app Next.js: los datos de los partidos viajan embebidos en un
+// bloque <script id="__NEXT_DATA__"> dentro del propio HTML (en vez de
+// pedirse aparte a una API), según la técnica que usa el proyecto
+// open-source "rffm_tools" para lo mismo. No ha sido posible comprobar
+// desde el entorno de desarrollo la forma EXACTA de ese JSON (el acceso
+// a rffm.es estaba bloqueado ahí), así que aquí se busca de forma
+// heurística: se recorre el JSON entero buscando el array que parezca
+// contener los partidos (por tener fecha + dos nombres de equipo en cada
+// elemento) probando varios nombres de campo habituales. Si la RFFM usa
+// nombres de campo distintos a los aquí previstos, faltará ajustar los
+// alias de abajo una vez se pueda ver una respuesta real - el endpoint
+// devuelve siempre alguna pista (las claves del primer partido
+// encontrado) para poder afinarlo rápido.
+const ALIAS_FECHA = ['fecha', 'fechaPartido', 'fecha_partido', 'date', 'fechaHora', 'fechaInicio'];
+const ALIAS_HORA = ['hora', 'horaPartido', 'hora_partido', 'time', 'horaInicio'];
+const ALIAS_LOCAL = ['equipoLocal', 'nombreLocal', 'local', 'equipo1', 'homeTeam', 'home', 'nombreEquipoLocal'];
+const ALIAS_VISITANTE = ['equipoVisitante', 'nombreVisitante', 'visitante', 'equipo2', 'awayTeam', 'away', 'nombreEquipoVisitante'];
+const ALIAS_GOLES_LOCAL = ['golesLocal', 'resultadoLocal', 'golLocal', 'homeScore', 'puntosLocal', 'marcadorLocal'];
+const ALIAS_GOLES_VISITANTE = ['golesVisitante', 'resultadoVisitante', 'golVisitante', 'awayScore', 'puntosVisitante', 'marcadorVisitante'];
+const ALIAS_ESCUDO_LOCAL = ['escudoLocal', 'escudo1', 'logoLocal', 'homeCrest', 'imagenLocal', 'escudoEquipoLocal'];
+const ALIAS_ESCUDO_VISITANTE = ['escudoVisitante', 'escudo2', 'logoVisitante', 'awayCrest', 'imagenVisitante', 'escudoEquipoVisitante'];
+const ALIAS_JORNADA = ['jornada', 'round', 'ronda', 'numeroJornada'];
+const ALIAS_ID = ['id', 'idPartido', 'partidoId', 'matchId', 'id_partido'];
+
+function normalizarTextoRival(txt) {
+  return String(txt ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
+function buscarCampo(obj, alias) {
+  for (const clave of alias) {
+    if (obj[clave] !== undefined && obj[clave] !== null && obj[clave] !== '') return obj[clave];
+  }
+  return null;
+}
+
+function textoDeCampo(valor) {
+  if (valor === null || valor === undefined) return null;
+  if (typeof valor === 'string') return valor.trim();
+  if (typeof valor === 'object') {
+    // a veces el nombre del equipo viene como { nombre: '...' } o { texto: '...' }
+    return textoDeCampo(valor.nombre ?? valor.texto ?? valor.value ?? valor.name ?? null);
+  }
+  return String(valor);
+}
+
+function urlDeCampo(valor) {
+  const texto = textoDeCampo(valor);
+  if (!texto) return null;
+  if (typeof valor === 'object' && (valor.url || valor.src)) return valor.url || valor.src;
+  return texto.startsWith('http') || texto.startsWith('/') ? texto : null;
+}
+
+function extraerNextData(html) {
+  const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+function pareceUnPartido(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+  return buscarCampo(obj, ALIAS_FECHA) !== null
+    && buscarCampo(obj, ALIAS_LOCAL) !== null
+    && buscarCampo(obj, ALIAS_VISITANTE) !== null;
+}
+
+function buscarArrayDePartidos(nodo, profundidadMax = 8, _prof = 0, _visto = new Set()) {
+  if (_prof > profundidadMax || !nodo || typeof nodo !== 'object' || _visto.has(nodo)) return null;
+  _visto.add(nodo);
+  if (Array.isArray(nodo)) {
+    if (nodo.length > 0 && nodo.filter(pareceUnPartido).length >= Math.ceil(nodo.length * 0.6)) {
+      return nodo;
+    }
+    for (const item of nodo) {
+      const encontrado = buscarArrayDePartidos(item, profundidadMax, _prof + 1, _visto);
+      if (encontrado) return encontrado;
+    }
+    return null;
+  }
+  for (const valor of Object.values(nodo)) {
+    const encontrado = buscarArrayDePartidos(valor, profundidadMax, _prof + 1, _visto);
+    if (encontrado) return encontrado;
+  }
+  return null;
+}
+
+// Admite ISO ("2026-10-04..."), "dd/mm/aaaa[ hh:mm]" o timestamp numérico
+// (ms o s). Devuelve { fecha: 'aaaa-mm-dd', hora: 'hh:mm'|null } o null si
+// no se ha podido interpretar.
+function parsearFechaHoraFlexible(fechaBruta, horaBruta) {
+  let fecha = null;
+  let hora = null;
+  if (typeof fechaBruta === 'number') {
+    const ms = fechaBruta > 1e12 ? fechaBruta : fechaBruta * 1000;
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) {
+      fecha = d.toISOString().slice(0, 10);
+      hora = d.toISOString().slice(11, 16);
+    }
+  } else {
+    const texto = String(fechaBruta).trim();
+    const conBarras = texto.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[ T](\d{1,2}):(\d{2}))?/);
+    const iso = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/);
+    if (conBarras) {
+      const [, d, m, a, h, min] = conBarras;
+      fecha = `${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      if (h) hora = `${h.padStart(2, '0')}:${min}`;
+    } else if (iso) {
+      const [, a, m, d, h, min] = iso;
+      fecha = `${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      if (h) hora = `${h.padStart(2, '0')}:${min}`;
+    }
+  }
+  if (!fecha) return null;
+  if (!hora && horaBruta) {
+    const h = String(horaBruta).trim().match(/^(\d{1,2}):(\d{2})/);
+    if (h) hora = `${h[1].padStart(2, '0')}:${h[2]}`;
+  }
+  return { fecha, hora };
+}
+
+// POST /api/partidos/importar-calendario - trae el calendario de un
+// equipo desde una URL de RFFM y crea/actualiza sus partidos. body:
+// { equipoId, temporadaId, url }. Guarda la url en el equipo para poder
+// re-sincronizar más adelante con un clic. Requiere que el equipo tenga
+// rellenado "nombreClubCompeticion" (cómo nos llama la RFFM, ej. "AD
+// Nuevo Baztán") para poder distinguir dentro de cada partido cuál de
+// los dos equipos somos nosotros y cuál es el rival.
+router.post('/importar-calendario', autenticar, async (req, res) => {
+  const { roles, id: usuarioId } = req.usuario;
+  const { equipoId, temporadaId, url } = req.body;
+  if (!equipoId || !temporadaId || !url) {
+    return res.status(400).json({ error: 'equipoId, temporadaId y url son obligatorios' });
+  }
+  if (!roles.some((r) => GESTION_DEPORTIVA.includes(r))) {
+    const autorizado = await usuarioEsPersonalDelEquipo(usuarioId, equipoId);
+    if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
+  }
+  let urlValida;
+  try {
+    urlValida = new URL(url);
+  } catch {
+    return res.status(400).json({ error: 'La URL no es válida' });
+  }
+  if (!/(^|\.)rffm\.es$/.test(urlValida.hostname)) {
+    return res.status(400).json({ error: 'Por ahora solo se admite un enlace de calendario de rffm.es' });
+  }
+
+  try {
+    const { rows: equipoRows } = await pool.query('SELECT nombre_club_competicion FROM equipos WHERE id = $1', [equipoId]);
+    if (!equipoRows[0]) return res.status(404).json({ error: 'Equipo no encontrado' });
+    const nombreClub = equipoRows[0].nombre_club_competicion;
+    if (!nombreClub) {
+      return res.status(400).json({
+        error: 'A este equipo le falta el "nombre del club en la competición" (cómo os llama la RFFM, ej. "AD Nuevo Baztán"). '
+          + 'Rellénalo en la ficha del equipo antes de importar, para poder distinguir el rival en cada partido.',
+      });
+    }
+    const clavePropia = normalizarTextoRival(nombreClub).split(/\s+/).filter((p) => p.length > 2);
+
+    let respuesta;
+    try {
+      respuesta = await fetch(urlValida.toString(), {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+          Accept: 'text/html',
+        },
+      });
+    } catch (err) {
+      return res.status(502).json({ error: `No se ha podido contactar con la RFFM: ${err.message}` });
+    }
+    if (!respuesta.ok) {
+      return res.status(502).json({ error: `La RFFM ha respondido con un error (${respuesta.status}) para ese enlace` });
+    }
+    const html = await respuesta.text();
+    const datos = extraerNextData(html);
+    if (!datos) {
+      return res.status(502).json({
+        error: 'La página se ha podido descargar pero no se ha encontrado el bloque de datos esperado (__NEXT_DATA__). '
+          + 'Puede que la RFFM haya cambiado el formato de su web.',
+      });
+    }
+    const partidosEncontrados = buscarArrayDePartidos(datos);
+    if (!partidosEncontrados || partidosEncontrados.length === 0) {
+      return res.status(502).json({
+        error: 'Se ha leído la página pero no se ha reconocido ningún partido dentro de sus datos. '
+          + 'El formato puede haber cambiado; habría que revisar el enlace real para ajustar la importación.',
+      });
+    }
+
+    let creados = 0;
+    let actualizados = 0;
+    let ignorados = 0;
+    const rivalesSinReconocer = [];
+
+    for (const p of partidosEncontrados) {
+      const nombreLocal = textoDeCampo(buscarCampo(p, ALIAS_LOCAL));
+      const nombreVisitante = textoDeCampo(buscarCampo(p, ALIAS_VISITANTE));
+      const fh = parsearFechaHoraFlexible(buscarCampo(p, ALIAS_FECHA), buscarCampo(p, ALIAS_HORA));
+      if (!nombreLocal || !nombreVisitante || !fh) { ignorados++; continue; }
+
+      const localEsNuestro = clavePropia.some((p2) => normalizarTextoRival(nombreLocal).includes(p2));
+      const visitanteEsNuestro = clavePropia.some((p2) => normalizarTextoRival(nombreVisitante).includes(p2));
+      if (localEsNuestro === visitanteEsNuestro) {
+        // o no aparecemos en ninguno de los dos lados, o (raro) en los dos - no se puede decidir el rival
+        rivalesSinReconocer.push(`${nombreLocal} - ${nombreVisitante}`);
+        ignorados++;
+        continue;
+      }
+      const localVisitante = localEsNuestro ? 'local' : 'visitante';
+      const rival = localEsNuestro ? nombreVisitante : nombreLocal;
+      const escudoRival = localEsNuestro
+        ? urlDeCampo(buscarCampo(p, ALIAS_ESCUDO_VISITANTE))
+        : urlDeCampo(buscarCampo(p, ALIAS_ESCUDO_LOCAL));
+
+      const golesLocal = buscarCampo(p, ALIAS_GOLES_LOCAL);
+      const golesVisitante = buscarCampo(p, ALIAS_GOLES_VISITANTE);
+      const resultadoPropio = localEsNuestro ? golesLocal : golesVisitante;
+      const resultadoRival = localEsNuestro ? golesVisitante : golesLocal;
+      const jugado = resultadoPropio !== null && resultadoPropio !== undefined
+        && resultadoRival !== null && resultadoRival !== undefined;
+
+      const idExterno = String(buscarCampo(p, ALIAS_ID) ?? `${fh.fecha}-${nombreLocal}-${nombreVisitante}`).slice(0, 150);
+      const jornada = textoDeCampo(buscarCampo(p, ALIAS_JORNADA));
+
+      const { rows: existente } = await pool.query(
+        `SELECT id FROM partidos WHERE equipo_id = $1 AND fuente_externa = 'rffm' AND id_externo = $2`,
+        [equipoId, idExterno]
+      );
+      if (existente[0]) {
+        await pool.query(
+          `UPDATE partidos SET fecha = $1, hora = $2, rival = $3, local_visitante = $4, jornada = $5,
+                                resultado_propio = $6, resultado_rival = $7, jugado = $8, escudo_rival = $9
+           WHERE id = $10`,
+          [
+            fh.fecha, fh.hora, rival, localVisitante, jornada || null,
+            resultadoPropio ?? null, resultadoRival ?? null, jugado, escudoRival, existente[0].id,
+          ]
+        );
+        actualizados++;
+      } else {
+        await pool.query(
+          `INSERT INTO partidos (equipo_id, temporada_id, fecha, hora, rival, local_visitante, jornada,
+                                  resultado_propio, resultado_rival, jugado, escudo_rival, id_externo, fuente_externa, creado_por)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'rffm', $13)`,
+          [
+            equipoId, temporadaId, fh.fecha, fh.hora, rival, localVisitante, jornada || null,
+            resultadoPropio ?? null, resultadoRival ?? null, jugado, escudoRival, idExterno, usuarioId,
+          ]
+        );
+        creados++;
+      }
+    }
+
+    await pool.query('UPDATE equipos SET calendario_externo_url = $1 WHERE id = $2', [url, equipoId]);
+
+    res.json({
+      ok: true,
+      totalEncontrados: partidosEncontrados.length,
+      partidosCreados: creados,
+      partidosActualizados: actualizados,
+      partidosIgnorados: ignorados,
+      rivalesSinReconocer: rivalesSinReconocer.slice(0, 10),
+      muestraClaves: Object.keys(partidosEncontrados[0] || {}),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al importar el calendario' });
   }
 });
 

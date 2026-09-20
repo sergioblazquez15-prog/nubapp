@@ -3,8 +3,9 @@
 // con rol técnico puede consultarlo y aportar; editar/borrar uno de otro
 // compañero es solo para dirección deportiva/administrador/coordinador.
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { api, urlMedia } from '../api/client';
 import { colorEtiqueta } from '../utils/colorEtiqueta';
+import { BotonInforme, CabeceraInforme } from '../components/Informe';
 
 const NATURALEZAS = ['fisica', 'tecnica', 'tactica'];
 const TIPOLOGIAS_SUGERIDAS = [
@@ -86,6 +87,7 @@ export default function Ejercicios() {
           {mostrarFormulario ? 'Cancelar' : '+ Nuevo ejercicio'}
         </button>
       </div>
+      <CabeceraInforme titulo="Banco de ejercicios" subtitulo={deportes.find((d) => d.id === deporteId)?.nombre} />
 
       <div className="barra-filtros">
         <select value={deporteId} onChange={(e) => setDeporteId(e.target.value)}>
@@ -117,6 +119,11 @@ export default function Ejercicios() {
         <div className="tarjetas-dashboard">
           {ejercicios.map((e) => (
             <div key={e.id} className="tarjeta tarjeta-dashboard tarjeta-ejercicio">
+              {e.imagenUrl && (
+                <button className="boton-enlace" style={{ padding: 0, display: 'block' }} onClick={() => setEjercicioAbiertoId(e.id)}>
+                  <img src={urlMedia(e.imagenUrl)} alt="" className="miniatura-esquema-ejercicio" />
+                </button>
+              )}
               <button className="boton-enlace titulo-tarjeta-ejercicio" onClick={() => setEjercicioAbiertoId(e.id)}>
                 {e.titulo}
               </button>
@@ -246,6 +253,20 @@ function DetalleEjercicio({ ejercicioId, onVolver, onEliminar }) {
     cargar();
   }
 
+  async function subirEsquema(archivo) {
+    const formData = new FormData();
+    formData.append('imagen', archivo);
+    await api.postFile(`/ejercicios/${ejercicioId}/imagen`, formData);
+    cargar();
+  }
+
+  async function subirMiniaturaVideo(videoId, archivo) {
+    const formData = new FormData();
+    formData.append('miniatura', archivo);
+    await api.postFile(`/ejercicios/videos/${videoId}/miniatura`, formData);
+    cargar();
+  }
+
   if (cargando) return <p className="cargando">Cargando…</p>;
   if (error) return <p className="error">{error}</p>;
   if (!ejercicio) return null;
@@ -253,10 +274,14 @@ function DetalleEjercicio({ ejercicioId, onVolver, onEliminar }) {
   return (
     <div className="pantalla-ejercicio-detalle">
       <button className="boton-enlace" onClick={onVolver}>‹ Volver al banco de ejercicios</button>
+      <CabeceraInforme titulo="Ejercicio" subtitulo={ejercicio.titulo} />
 
       <div className="cabecera">
         <h1>{ejercicio.titulo}</h1>
-        <button className="boton-peligro" onClick={onEliminar}>Eliminar ejercicio</button>
+        <div className="acciones-fila">
+          <BotonInforme titulo={`ejercicio ${ejercicio.titulo}`} />
+          <button className="boton-peligro" onClick={onEliminar}>Eliminar ejercicio</button>
+        </div>
       </div>
 
       {ejercicio.descripcion && <p>{ejercicio.descripcion}</p>}
@@ -270,17 +295,46 @@ function DetalleEjercicio({ ejercicioId, onVolver, onEliminar }) {
         {ejercicio.duracionMin && ` · ${ejercicio.duracionMin} min`}
       </p>
 
+      <div className="bloque-ficha">
+        <h2>📐 Esquema visual</h2>
+        {ejercicio.imagenUrl ? (
+          <img src={urlMedia(ejercicio.imagenUrl)} alt="Esquema del ejercicio" className="esquema-ejercicio-grande" />
+        ) : (
+          <p className="nota">Todavía no se ha subido un esquema/pizarra táctica para este ejercicio.</p>
+        )}
+        <label style={{ marginTop: 10 }}>
+          {ejercicio.imagenUrl ? 'Cambiar imagen del esquema' : 'Subir imagen del esquema'}
+          <input
+            type="file" accept="image/*"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) subirEsquema(f); e.target.value = ''; }}
+          />
+        </label>
+      </div>
+
       <h2>Vídeos</h2>
       {ejercicio.videos.length === 0 ? (
         <p className="nota">Todavía no hay ningún vídeo vinculado.</p>
       ) : (
-        <ul className="lista-dashboard" style={{ marginBottom: 16 }}>
+        <ul className="lista-dashboard lista-videos-ejercicio" style={{ marginBottom: 16 }}>
           {ejercicio.videos.map((v) => (
-            <li key={v.id}>
-              <a href={v.urlOriginal} target="_blank" rel="noreferrer">{v.titulo || v.urlOriginal}</a>
-              <span className="nota"> — {v.plataforma}{v.autor ? ` · ${v.autor}` : ''}</span>
-              {' '}
-              <button className="boton-enlace" onClick={() => eliminarVideo(v.id)}>quitar</button>
+            <li key={v.id} className="fila-video-ejercicio">
+              {v.imagenGeneradaUrl && (
+                <img src={urlMedia(v.imagenGeneradaUrl)} alt="" className="miniatura-video-ejercicio" />
+              )}
+              <div>
+                <a href={v.urlOriginal} target="_blank" rel="noreferrer">{v.titulo || v.urlOriginal}</a>
+                <span className="nota"> — {v.plataforma}{v.autor ? ` · ${v.autor}` : ''}</span>
+                <div className="acciones-fila" style={{ marginTop: 4 }}>
+                  <label className="boton-enlace" style={{ cursor: 'pointer' }}>
+                    {v.imagenGeneradaUrl ? 'Cambiar miniatura' : 'Subir miniatura'}
+                    <input
+                      type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) subirMiniaturaVideo(v.id, f); e.target.value = ''; }}
+                    />
+                  </label>
+                  <button className="boton-enlace" onClick={() => eliminarVideo(v.id)}>quitar</button>
+                </div>
+              </div>
             </li>
           ))}
         </ul>

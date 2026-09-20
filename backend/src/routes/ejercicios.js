@@ -7,9 +7,38 @@
 // error el trabajo de otro entrenador.
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const pool = require('../config/db');
 const { autenticar } = require('../middleware/auth');
 const { requiereRol, GESTION_DEPORTIVA, PERSONAL_TECNICO } = require('../middleware/permisos');
+
+// ---- imágenes: esquema del ejercicio (pizarra táctica) y miniatura de
+// cada vídeo vinculado. Alcance acordado para "crear ejercicio desde un
+// enlace de vídeo": no hay generación automática de imagen ni de
+// explicación por IA - quien vincula el vídeo sube su propia miniatura y
+// escribe la explicación a mano (título/descripción del ejercicio o del
+// vídeo). Mismo patrón que la foto de deportistas.
+const CARPETA_IMAGENES = path.join(__dirname, '..', '..', 'uploads', 'ejercicios');
+fs.mkdirSync(CARPETA_IMAGENES, { recursive: true });
+
+const almacenImagenes = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, CARPETA_IMAGENES),
+  filename: (req, file, cb) => {
+    const extension = path.extname(file.originalname) || '.jpg';
+    const prefijo = req.params.videoId ? `video-${req.params.videoId}` : `ejercicio-${req.params.id}`;
+    cb(null, `${prefijo}-${Date.now()}${extension}`);
+  },
+});
+const subidaImagen = multer({
+  storage: almacenImagenes,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) return cb(new Error('El archivo debe ser una imagen'));
+    cb(null, true);
+  },
+});
 
 function filaAEjercicio(fila) {
   return {
@@ -175,6 +204,29 @@ router.delete('/:id', autenticar, requiereRol(...PERSONAL_TECNICO), async (req, 
   }
 });
 
+// POST /api/ejercicios/:id/imagen - sube/sustituye el esquema visual del
+// ejercicio (imagen de la pizarra táctica, dibujada fuera de la app y
+// subida aquí como foto/captura - primera versión sencilla, sin editor
+// de diagramas propio).
+router.post('/:id/imagen', autenticar, requiereRol(...PERSONAL_TECNICO), subidaImagen.single('imagen'), async (req, res) => {
+  if (!(await puedeEditar(req, req.params.id))) {
+    return res.status(403).json({ error: 'Solo quien creó este ejercicio (o dirección deportiva) puede editarlo' });
+  }
+  if (!req.file) return res.status(400).json({ error: 'Falta la imagen' });
+  try {
+    const rutaPublica = `/uploads/ejercicios/${req.file.filename}`;
+    const { rows } = await pool.query(
+      'UPDATE ejercicios SET imagen_url = $1 WHERE id = $2 RETURNING id',
+      [rutaPublica, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Ejercicio no encontrado' });
+    res.json({ ok: true, imagenUrl: rutaPublica });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al subir la imagen' });
+  }
+});
+
 // POST /api/ejercicios/:id/videos - vincular un vídeo (Instagram/TikTok).
 router.post('/:id/videos', autenticar, requiereRol(...PERSONAL_TECNICO), async (req, res) => {
   const { titulo, urlOriginal, plataforma, autor } = req.body;
@@ -193,6 +245,26 @@ router.post('/:id/videos', autenticar, requiereRol(...PERSONAL_TECNICO), async (
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al vincular el vídeo' });
+  }
+});
+
+// POST /api/ejercicios/videos/:videoId/miniatura - sube la miniatura del
+// vídeo. Alcance acordado: no se genera sola a partir del vídeo, la sube
+// a mano quien vincula el enlace (una captura de pantalla del vídeo, por
+// ejemplo).
+router.post('/videos/:videoId/miniatura', autenticar, requiereRol(...PERSONAL_TECNICO), subidaImagen.single('miniatura'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Falta la imagen' });
+  try {
+    const rutaPublica = `/uploads/ejercicios/${req.file.filename}`;
+    const { rows } = await pool.query(
+      'UPDATE ejercicios_videos SET imagen_generada_url = $1, procesado_estado = $2 WHERE id = $3 RETURNING id',
+      [rutaPublica, 'procesado', req.params.videoId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Vídeo no encontrado' });
+    res.json({ ok: true, imagenGeneradaUrl: rutaPublica });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al subir la miniatura' });
   }
 });
 
