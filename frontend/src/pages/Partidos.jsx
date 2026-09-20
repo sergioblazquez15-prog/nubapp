@@ -375,6 +375,7 @@ function ImportarCalendarioRFFM({ equipos, equipoInicialId, temporadaId, onImpor
             {resultado.totalEncontrados} partidos encontrados · {resultado.partidosCreados} nuevos
             {' '}· {resultado.partidosActualizados} actualizados
             {resultado.partidosIgnorados > 0 && ` · ${resultado.partidosIgnorados} no se han podido interpretar`}
+            {resultado.partidosEliminados > 0 && ` · ${resultado.partidosEliminados} eliminados (sobraban de una importación anterior)`}
           </p>
           {resultado.rivalesSinReconocer?.length > 0 && (
             <p style={{ margin: '6px 0 0' }} className="texto-peligro">
