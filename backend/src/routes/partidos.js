@@ -717,6 +717,52 @@ function normalizarTextoRival(txt) {
   return String(txt ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
 
+// Palabras habitualísimas en nombres de clubes de fútbol aficionado
+// (siglas de forma jurídica, "unión", "deportiva", "escuela"...) que NO
+// sirven para identificar un club concreto: si se usan para reconocer
+// "quién somos nosotros" dentro de un partido, cualquier otro club que
+// también las tenga (la inmensa mayoría) se confunde con nosotros. Es lo
+// que pasaba antes: "C.D. Unión Deportiva Villar del Olmo" reconocía como
+// propios varios partidos ajenos de la misma jornada solo por compartir
+// "unión" o "deportiva" con el rival, generando partidos duplicados con
+// rivales inventados.
+const PALABRAS_GENERICAS_CLUB = new Set([
+  'cd', 'cf', 'cde', 'ud', 'sd', 'ce', 'sad', 'afe', 'efmo', 'emf', 'adnb',
+  'club', 'deportivo', 'deportiva', 'union', 'atletico', 'real', 'futbol',
+  'agrupacion', 'escuela', 'sala', 'ciudad', 'nuevo', 'nueva', 'san', 'santa',
+  'del', 'las', 'los', 'senior', 'city', 'academy', 'academia',
+]);
+
+// Limpia signos (puntos, apóstrofes, comillas, guiones) y separa en
+// palabras de más de 2 letras - para comparar por palabra completa y no
+// por trozo de texto (si no, "Villar" también "encontraría" a "Villarejo").
+function tokensDeNombre(nombre) {
+  return normalizarTextoRival(nombre)
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((p) => p.length > 2);
+}
+
+// Palabras que de verdad distinguen a nuestro club (quitando las
+// genéricas de arriba); si no queda ninguna (nombre compuesto solo de
+// palabras genéricas), se usan todas para no quedarnos sin nada con lo
+// que comparar.
+function clavesIdentificativas(nombreClub) {
+  const todas = tokensDeNombre(nombreClub);
+  const distintivas = todas.filter((t) => !PALABRAS_GENERICAS_CLUB.has(t));
+  return distintivas.length > 0 ? distintivas : todas;
+}
+
+// Un equipo del partido "es nuestro" si TODAS nuestras palabras
+// distintivas aparecen como palabra completa en su nombre (no basta con
+// que una sola coincida, y no vale que sea un simple trozo de otra
+// palabra: comparación por palabra completa, no por subcadena).
+function esNuestroEquipo(nombreCandidato, clavePropia) {
+  if (clavePropia.length === 0) return false;
+  const tokensCandidato = tokensDeNombre(nombreCandidato);
+  return clavePropia.every((tok) => tokensCandidato.includes(tok));
+}
+
 function buscarCampo(obj, alias) {
   for (const clave of alias) {
     if (obj[clave] !== undefined && obj[clave] !== null && obj[clave] !== '') return obj[clave];
@@ -882,7 +928,7 @@ router.post('/importar-calendario', autenticar, async (req, res) => {
           + 'Rellénalo en la ficha del equipo antes de importar, para poder distinguir el rival en cada partido.',
       });
     }
-    const clavePropia = normalizarTextoRival(nombreClub).split(/\s+/).filter((p) => p.length > 2);
+    const clavePropia = clavesIdentificativas(nombreClub);
 
     let respuesta;
     try {
@@ -921,6 +967,7 @@ router.post('/importar-calendario', autenticar, async (req, res) => {
     let actualizados = 0;
     let ignorados = 0;
     const rivalesSinReconocer = [];
+    const idsValidosDeEstaImportacion = [];
 
     for (const p of partidosEncontrados) {
       const nombreLocal = textoDeCampo(buscarCampo(p, ALIAS_LOCAL));
@@ -928,8 +975,8 @@ router.post('/importar-calendario', autenticar, async (req, res) => {
       const fh = parsearFechaHoraFlexible(buscarCampo(p, ALIAS_FECHA), buscarCampo(p, ALIAS_HORA));
       if (!nombreLocal || !nombreVisitante || !fh) { ignorados++; continue; }
 
-      const localEsNuestro = clavePropia.some((p2) => normalizarTextoRival(nombreLocal).includes(p2));
-      const visitanteEsNuestro = clavePropia.some((p2) => normalizarTextoRival(nombreVisitante).includes(p2));
+      const localEsNuestro = esNuestroEquipo(nombreLocal, clavePropia);
+      const visitanteEsNuestro = esNuestroEquipo(nombreVisitante, clavePropia);
       if (localEsNuestro === visitanteEsNuestro) {
         // o no aparecemos en ninguno de los dos lados, o (raro) en los dos - no se puede decidir el rival
         rivalesSinReconocer.push(`${nombreLocal} - ${nombreVisitante}`);
@@ -951,6 +998,7 @@ router.post('/importar-calendario', autenticar, async (req, res) => {
 
       const idExterno = String(buscarCampo(p, ALIAS_ID) ?? `${fh.fecha}-${nombreLocal}-${nombreVisitante}`).slice(0, 150);
       const jornada = textoDeCampo(buscarCampo(p, ALIAS_JORNADA));
+      idsValidosDeEstaImportacion.push(idExterno);
 
       const { rows: existente } = await pool.query(
         `SELECT id FROM partidos WHERE equipo_id = $1 AND fuente_externa = 'rffm' AND id_externo = $2`,
@@ -981,6 +1029,23 @@ router.post('/importar-calendario', autenticar, async (req, res) => {
       }
     }
 
+    // Limpieza: cualquier partido que ya tuviéramos guardado de esta misma
+    // fuente (RFFM) para este equipo y temporada, y que esta importación
+    // NO ha vuelto a encontrar, se borra. Esto es lo que permite reparar
+    // solo con "volver a importar" los partidos duplicados/con rival
+    // inventado que dejó una importación anterior con el reconocimiento de
+    // rival equivocado (por ejemplo, antes de este arreglo).
+    let eliminados = 0;
+    if (idsValidosDeEstaImportacion.length > 0) {
+      const { rowCount } = await pool.query(
+        `DELETE FROM partidos
+          WHERE equipo_id = $1 AND temporada_id = $2 AND fuente_externa = 'rffm'
+            AND NOT (id_externo = ANY($3::text[]))`,
+        [equipoId, temporadaId, idsValidosDeEstaImportacion]
+      );
+      eliminados = rowCount;
+    }
+
     await pool.query('UPDATE equipos SET calendario_externo_url = $1 WHERE id = $2', [url, equipoId]);
 
     res.json({
@@ -989,6 +1054,7 @@ router.post('/importar-calendario', autenticar, async (req, res) => {
       partidosCreados: creados,
       partidosActualizados: actualizados,
       partidosIgnorados: ignorados,
+      partidosEliminados: eliminados,
       rivalesSinReconocer: rivalesSinReconocer.slice(0, 10),
       muestraClaves: Object.keys(partidosEncontrados[0] || {}),
     });
