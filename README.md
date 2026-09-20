@@ -31,7 +31,18 @@ nubapp/
 │   ├── 07_schema_partidos.sql    -> partidos y resultados (deportes de equipo)
 │   ├── 08_schema_directo.sql     -> marcador en directo (eventos de partido)
 │   ├── 09_schema_metodologia.sql -> documentos de metodología por deporte o generales
-│   └── 10_schema_directo_avanzado.sql -> convocatoria, cronómetro y más tipos de evento del directo
+│   ├── 10_schema_directo_avanzado.sql -> convocatoria, cronómetro y más tipos de evento del directo
+│   ├── 11_seed_ejercicios_futbol.sql -> banco inicial de 18 ejercicios reales de fútbol (una tipología por par)
+│   ├── 12_schema_competiciones.sql -> catálogo de competiciones (liga/copa/torneo/amistoso) por equipo y temporada
+│   ├── 13_seed_ejercicios_otros_deportes.sql -> banco de ejercicios para Baloncesto y deportes individuales (Muay Thai, Pádel, Tenis, Patinaje, Gimnasia Rítmica)
+│   ├── 14_permitir_multiples_cuotas.sql -> permite varias cuotas del mismo deporte por deportista (campo "concepto")
+│   ├── 15_seed_ejercicios_transiciones_futbol.sql -> 20 ejercicios de fútbol de transiciones en espacio reducido
+│   ├── 16_seed_ejercicios_futbol_variado.sql -> 9 ejercicios más de fútbol (rondos, rueda de pase, juego de posición, salida de presión)
+│   ├── 17_seed_ejercicios_futbol_variado_2.sql -> 10 ejercicios más de fútbol (posesión, rondos, partido condicionado, rueda de pase, transiciones)
+│   ├── 18_seed_ejercicios_futbol_variado_3.sql -> 10 ejercicios más de fútbol (partido condicionado, rondos, rueda de pase, juego de posición)
+│   ├── 19_seed_ejercicios_futbol_variado_4.sql -> 10 ejercicios más de fútbol (ataque vs bloque bajo, rondos posicionales, ataque contra defensa)
+│   ├── 20_seed_ejercicios_futbol_variado_5.sql -> 10 ejercicios más de fútbol (posesión con comodines, rondos, defensa organizada, ruedas de pase)
+│   └── 21_seed_ejercicios_futbol_variado_6.sql -> últimos 2 ejercicios de fútbol de la web de referencia (juego de posesión, salida de presión alta)
 ├── backend/
 │   ├── src/
 │   │   ├── config/db.js          -> conexión a PostgreSQL
@@ -50,6 +61,7 @@ nubapp/
 │   │   ├── routes/ejercicios.js  -> banco de ejercicios y vídeos
 │   │   ├── routes/planificaciones.js -> planificación mensual por equipo
 │   │   ├── routes/metodologia.js -> documentos de metodología por deporte o generales
+│   │   ├── routes/competiciones.js -> catálogo de competiciones por equipo y temporada
 │   │   └── server.js
 │   ├── scripts/crear_admin.js    -> crea el primer administrador desde terminal
 │   ├── package.json
@@ -58,10 +70,11 @@ nubapp/
     ├── src/
     │   ├── api/client.js         -> fetch con JWT automático
     │   ├── auth/AuthContext.jsx  -> sesión (login/logout, saber el rol)
-    │   ├── components/Layout.jsx, RutaProtegida.jsx
+    │   ├── components/Layout.jsx, RutaProtegida.jsx, BarraCuota.jsx
     │   ├── pages/Login.jsx, Inicio.jsx, Usuarios.jsx, Deportistas.jsx, Equipos.jsx, Cuotas.jsx,
-    │   │         Ejercicios.jsx, Metodologia.jsx
-    │   └── styles/global.css
+    │   │         Ejercicios.jsx, Metodologia.jsx, Competiciones.jsx
+    │   ├── utils/colorEtiqueta.js -> color estable por texto, reutilizado en varias pantallas
+    │   └── styles/global.css     -> sistema visual (tokens de color, botones, tarjetas, badges, Directo)
     ├── vite.config.js            -> incluye plugin PWA
     └── package.json
 ```
@@ -263,13 +276,14 @@ darla de alta, editarla o registrar pagos es solo de administrador.
   ficha.
 - `GET /api/cuotas/:id` — detalle completo: importes, previsión mensual y
   pagos.
-- `POST /api/cuotas` — dar de alta la cuota de un deportista en un
-  deporte/temporada (importe de cuota, equipación, otros importes,
-  descuentos, notas).
+- `POST /api/cuotas` — dar de alta una cuota de un deportista en un
+  deporte/temporada (concepto, importe de cuota, equipación, otros
+  importes, descuentos, notas).
 - `POST /api/cuotas/grupal` — edición/alta grupal: aplica el mismo importe
-  y descuento a varios deportistas de un deporte de golpe (crea la cuota
-  si no existía, la actualiza si ya la tenía).
-- `PUT /api/cuotas/:id` — editar importes/descuentos/notas.
+  y descuento a varios deportistas de un deporte de golpe, bajo un mismo
+  concepto (crea la cuota si no existía con ese concepto, la actualiza si
+  ya la tenía).
+- `PUT /api/cuotas/:id` — editar importes/descuentos/concepto/notas.
   `PUT /api/cuotas/:id/prevision` — fija la previsión de cobro mes a mes
   (los 12 meses, como el "Enero...Diciembre" del sistema anterior).
 - `POST /api/cuotas/:id/pagos` — registrar un pago real (fecha, importe,
@@ -278,11 +292,18 @@ darla de alta, editarla o registrar pagos es solo de administrador.
 - `DELETE /api/cuotas/:id` — eliminar una cuota completa (con sus pagos y
   previsión), solo para corregir un alta hecha por error.
 
+Un mismo deportista puede tener varias cuotas del mismo deporte y
+temporada a la vez (ej. "Septiembre", "Octubre", "Segundo trimestre",
+"Liga de pádel"), siempre que cada una tenga un concepto distinto
+(`14_permitir_multiples_cuotas.sql`); reutilizar el mismo concepto (a
+mano o desde la edición grupal) actualiza esa cuota en vez de duplicarla.
+
 Frontend: pantalla "Cuotas" con selector de temporada/deporte, tarjeta de
 estadística (facturado/cobrado/pendiente/cuotas al día, con desglose por
-deporte), alta individual, edición grupal, y una ficha por cuota para
-editar importes, la previsión mensual y los pagos. Dentro de cada ficha de
-deportista se ve además un resumen de sus cuotas (de un vistazo, sin
+deporte), alta individual (con su concepto), edición grupal, y una ficha
+por cuota para editar concepto/importes, la previsión mensual y los
+pagos. Dentro de cada ficha de deportista se ve además un resumen de sus
+cuotas (deporte, concepto y barra de progreso de cobro, de un vistazo, sin
 gestión) para quien tenga acceso económico.
 
 ## Partidos y asistencia (nuevo)
@@ -378,7 +399,30 @@ borre por error el trabajo de otro entrenador.
 
 Frontend: pantalla "Ejercicios" con selector de deporte (obligatorio) y
 filtros de naturaleza/tipología/texto, alta de ejercicio, y una ficha por
-ejercicio para gestionar sus vídeos vinculados.
+ejercicio para gestionar sus vídeos vinculados. El listado es una
+cuadrícula de tarjetas (no tabla) con etiquetas de color por
+tipología/naturaleza/edad — el color se calcula de forma estable a partir
+del propio texto, así que cualquier etiqueta nueva ya tiene un color
+consistente sin tocar código.
+
+Banco inicial poblado con ejercicios reales por deporte
+(`11_seed_ejercicios_futbol.sql`, `13_seed_ejercicios_otros_deportes.sql`,
+`15_seed_ejercicios_transiciones_futbol.sql`,
+`16_seed_ejercicios_futbol_variado.sql`,
+`17_seed_ejercicios_futbol_variado_2.sql`,
+`18_seed_ejercicios_futbol_variado_3.sql`,
+`19_seed_ejercicios_futbol_variado_4.sql`,
+`20_seed_ejercicios_futbol_variado_5.sql`,
+`21_seed_ejercicios_futbol_variado_6.sql`): 18 de fútbol + 20 de
+transiciones/contraataque en espacio reducido + 51 más variados (rondos,
+rueda de pase, juego de posición, salida de presión, partido condicionado,
+ataque contra defensa, defensa organizada) — estos 71 últimos redactados
+de nuevo a partir de referencias que pasó Sergio (un ebook y una web de
+ejercicios de fútbol), no copiados literalmente — y 33 repartidos entre
+Baloncesto, Muay Thai, Pádel, Tenis, Patinaje y Gimnasia Rítmica (122 en
+total), como punto de partida para que cada entrenador amplíe con los
+suyos. Con la tanda 21 se ha terminado de procesar toda la web de
+referencia (sus 6 páginas de archivo de ejercicios).
 
 ## Planificación mensual (nuevo)
 
@@ -454,6 +498,15 @@ Un gol sigue sumando al momento en el marcador; borrar un evento de gol
 lo resta — `resultado_propio`/`resultado_rival` siempre coincide con la
 suma de los goles registrados.
 
+**Visual (v3):** rediseñado para parecerse a Picco de verdad, no solo
+funcionalmente — cabecera oscura con marcador y cronómetro grandes,
+botones de acción grandes con icono y color por categoría (gol verde,
+tiro azul, córner morado, falta naranja, amarilla/roja con su color),
+organizados en dos columnas (Nosotros / Rival) para no tener que leer
+texto durante un partido real. Clases nuevas en `global.css`:
+`.marcador-directo`, `.directo-cabecera`, `.boton-accion-directo` y
+variantes `.accion-*` por categoría.
+
 - `GET/PUT /api/partidos/:id/alineacion` — convocatoria del partido.
 - `PUT /api/partidos/:id/directo/iniciar` — fija las partes y arranca el
   cronómetro. `.../pausar`, `.../reanudar`, `.../siguiente-parte`,
@@ -497,18 +550,80 @@ generales), listado, y detalle con edición de título/contenido en un
 `textarea` de texto largo, en el mismo estilo que el resto de
 formularios.
 
+## Competición (nuevo)
+
+Catálogo de competiciones (liga, copa, torneo o amistoso) por equipo y
+temporada — antes un partido solo tenía un campo de texto libre
+"competición". Esquema en `12_schema_competiciones.sql` (tabla
+`competiciones`, y `partidos.competicion_id` como referencia opcional;
+el campo de texto antiguo se mantiene por compatibilidad).
+
+- `GET /api/competiciones?equipoId=&temporadaId=` — listar. `POST
+  /api/competiciones` — crear (nombre + tipo). `PUT
+  /api/competiciones/:id` / `DELETE /api/competiciones/:id` — editar o
+  eliminar (dirección deportiva/admin/coordinador, o el propio personal
+  del equipo para crear). Al eliminar una competición, los partidos que
+  la usaban se quedan sin competición, no se borran.
+
+Frontend: pantalla nueva "Competición" en el menú, con selector de
+temporada + equipo y tarjetas por competición (con etiqueta de color
+según el tipo). Al crear un partido desde la ficha del equipo, ahora se
+elige la competición de esta lista (o "Amistoso, sin competición").
+
+## Sistema visual (rediseño grande)
+
+`global.css` tiene ahora una base de diseño mucho más cuidada y coherente
+en toda la app: sombras y radios suaves, navegación superior con iconos y
+estado activo, botones con feedback al pulsar, y un conjunto de
+utilidades reutilizables en cualquier pantalla nueva:
+
+- **Avatares de iniciales** (`avatar-circulo`, con variante mini/grande) y
+  **badges de estado** (`badge-activo`/`badge-inactivo`) para personas y
+  equipos.
+- **Color estable por texto** (`frontend/src/utils/colorEtiqueta.js`):
+  cualquier etiqueta libre (un deporte, una tipología de ejercicio, una
+  categoría de edad...) sale siempre pintada del mismo color en toda la
+  app, sin mantener una lista cerrada — se usa ya en Ejercicios,
+  Deportistas, Equipos, Cuotas y Metodología.
+- **Fichas en bloques** (`bloque-ficha`): las pantallas de detalle
+  (ficha de deportista, ficha de equipo) están organizadas en tarjetas
+  separadas con icono por sección, en vez de un bloque de texto corrido.
+
+Con esa base se ha hecho una pasada visual grande por pantalla:
+
+- **Deportistas**: el listado pasó de tabla a cuadrícula de tarjetas
+  (avatar con iniciales, deportes con etiqueta de color, estado, botón
+  grande de lesión) y la ficha individual se reorganiza en bloques
+  (datos generales, historial de deportes, cuotas).
+- **Inicio**: las 4 tarjetas del dashboard tienen ahora icono, contador y
+  un color de acento por tipo de aviso (dorado cumpleaños, rojo
+  lesionados/faltas, azul resultados), con el resultado de cada partido
+  en una insignia verde/roja/gris según victoria, derrota o empate.
+- **Equipos**: el listado también pasó a tarjetas (icono por deporte,
+  etiquetas de color, nº de deportistas destacado) y la ficha de equipo
+  se organiza en bloques (personal, plantilla, partidos, asistencia,
+  planificación).
+- **Metodología**: los documentos se muestran como tarjetas con icono en
+  vez de una lista de enlaces.
+- **Login**: pantalla de acceso más grande y centrada, con el escudo del
+  club y el nombre de la app como elemento principal.
+
+Pendiente: seguir afinando el interior de Directo y de la ficha técnica
+de Equipos contra las capturas de referencia de Sergio a medida que las
+vaya concretando, y la integración del calendario de la federación
+(enlace del club).
+
 ## Próximos pasos
 
 Todo el listado original de bloques está construido: login/usuarios,
 fichas de deportistas, equipos (personal/plantilla/ficha técnica),
-cuotas, partidos/asistencia, Inicio, banco de ejercicios, planificación
-mensual, traspaso de temporada, Directo y Metodología — ver las secciones
-correspondientes más arriba.
-
-Solo queda pendiente afinar Directo y Metodología en cuanto tengamos las
-capturas de pantalla de MísterCoach de esos dos apartados como
-referencia; son primeras versiones razonables construidas sin ese
-material.
+cuotas (con barra de progreso y varias cuotas por deporte), partidos/
+asistencia, competición, Inicio, banco de ejercicios, planificación
+mensual, traspaso de temporada, Directo (v3 visual) y Metodología — ver
+las secciones correspondientes más arriba. Pendiente: integración del
+calendario de la federación (enlace del club), banco de ejercicios que
+Sergio quiera aportar en su propio formato, y seguir afinando detalles
+visuales puntuales contra las referencias de Sergio.
 
 ## Cómo desplegarlo en tu VPS (cuando lo subamos)
 
