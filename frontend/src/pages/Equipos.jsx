@@ -5,9 +5,18 @@
 import { Fragment, useEffect, useState } from 'react';
 import { api, urlMedia } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { colorEtiqueta } from '../utils/colorEtiqueta';
 
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
 const ROLES_PERSONAL = ['entrenador', 'coordinador', 'monitor'];
+
+const ICONOS_DEPORTE = {
+  Futbol: '⚽', Baloncesto: '🏀', Padel: '🎾', Tenis: '🎾',
+  'Muay Thai': '🥊', Patinaje: '⛸️', 'Gimnasia Ritmica': '🤸',
+};
+function iconoDeporte(nombre) {
+  return ICONOS_DEPORTE[nombre] || '🏅';
+}
 
 // Posiciones fijas por deporte, con su sitio (en % del ancho/alto) sobre
 // el esquema del campo/pista. Varias posiciones pueden repetirse en dos
@@ -186,43 +195,42 @@ export default function Equipos() {
       ) : equipos.length === 0 ? (
         <p className="nota">No hay equipos que coincidan con estos filtros.</p>
       ) : (
-        <div className="tabla-scroll">
-          <table className="tabla-usuarios">
-            <thead>
-              <tr>
-                <th>Equipo</th>
-                <th>Deporte</th>
-                <th>Temporada</th>
-                <th>Club / rival habitual</th>
-                <th>Deportistas</th>
-                <th>Estado</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {equipos.map((eq) => (
-                <tr key={eq.id} className={eq.inactivo ? 'fila-inactiva' : ''}>
-                  <td>
+        <div className="tarjetas-dashboard">
+          {equipos.map((eq) => (
+            <div key={eq.id} className={`tarjeta tarjeta-dashboard tarjeta-equipo${eq.inactivo ? ' tarjeta-inactiva' : ''}`}>
+              <div className="cabecera-equipo">
+                <span className="icono-equipo">{iconoDeporte(eq.deporteNombre)}</span>
+                <div className="datos-cabecera-persona">
+                  <button className="boton-enlace nombre-tarjeta-persona" onClick={() => setEquipoAbiertoId(eq.id)}>
                     {eq.nombre}
-                    {eq.categoria && <span className="nota"> ({eq.categoria})</span>}
-                  </td>
-                  <td>{eq.deporteNombre}</td>
-                  <td>{eq.temporadaNombre}</td>
-                  <td>{eq.clubNombre || '—'}</td>
-                  <td>{eq.numeroDeportistas ?? 0}</td>
-                  <td>{eq.inactivo ? 'Inactivo' : 'Activo'}</td>
-                  <td className="acciones-fila">
-                    <button className="boton-lesion" onClick={() => setEquipoAbiertoId(eq.id)}>
-                      Ver plantilla
-                    </button>
-                    {puedeGestionar && !eq.inactivo && (
-                      <button className="boton-peligro" onClick={() => darDeBajaEquipo(eq.id)}>Dar de baja</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </button>
+                  {eq.categoria && <span className="nota" style={{ fontSize: 12.5 }}>{eq.categoria}</span>}
+                </div>
+                <span className={`badge-estado ${eq.inactivo ? 'badge-inactivo' : 'badge-activo'}`}>
+                  {eq.inactivo ? 'Inactivo' : 'Activo'}
+                </span>
+              </div>
+
+              <div className="etiquetas-roles" style={{ margin: '4px 0' }}>
+                <span className={`etiqueta-suave ${colorEtiqueta(eq.deporteNombre)}`}>{eq.deporteNombre}</span>
+                <span className="etiqueta-suave">{eq.temporadaNombre}</span>
+              </div>
+
+              <p className="nota" style={{ margin: 0, fontSize: 13 }}>
+                {eq.clubNombre ? `Rival habitual: ${eq.clubNombre}` : 'Sin club/rival habitual indicado'}
+              </p>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
+                👥 {eq.numeroDeportistas ?? 0} deportista{(eq.numeroDeportistas ?? 0) === 1 ? '' : 's'} en plantilla
+              </p>
+
+              <div className="acciones-fila" style={{ marginTop: 4 }}>
+                <button className="boton-lesion" onClick={() => setEquipoAbiertoId(eq.id)}>Ver plantilla</button>
+                {puedeGestionar && !eq.inactivo && (
+                  <button className="boton-peligro" onClick={() => darDeBajaEquipo(eq.id)}>Dar de baja</button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -448,85 +456,100 @@ function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
         ‹ Volver a equipos
       </button>
 
-      <div className="cabecera">
-        <h1>
-          {equipo.nombre} <span className="nota">({equipo.deporteNombre} · {equipo.temporadaNombre})</span>
-        </h1>
+      <div className="cabecera cabecera-ficha-persona">
+        <span className="icono-equipo icono-equipo-grande">{iconoDeporte(equipo.deporteNombre)}</span>
+        <div>
+          <h1 style={{ marginBottom: 4 }}>{equipo.nombre}</h1>
+          <div className="etiquetas-roles" style={{ margin: 0 }}>
+            <span className={`etiqueta-suave ${colorEtiqueta(equipo.deporteNombre)}`}>{equipo.deporteNombre}</span>
+            <span className="etiqueta-suave">{equipo.temporadaNombre}</span>
+            {equipo.clubNombre && <span className="etiqueta-suave">vs. {equipo.clubNombre}</span>}
+          </div>
+        </div>
       </div>
-      {equipo.clubNombre && <p className="nota">Club / rival habitual: {equipo.clubNombre}</p>}
 
-      <h2>Personal del equipo</h2>
-      <div className="etiquetas-roles" style={{ marginBottom: 12 }}>
-        {equipo.personal.length === 0 ? (
-          <span className="nota">Sin personal asignado todavía.</span>
-        ) : (
-          equipo.personal.map((p) => (
-            <span key={`${p.usuarioId}-${p.rolEnEquipo}`} className="etiqueta-suave">
-              {p.nombreCompleto} · {p.rolEnEquipo}
-              {puedeGestionar && (
-                <button
-                  className="boton-enlace"
-                  style={{ marginLeft: 6 }}
-                  onClick={() => quitarPersonal(p.usuarioId, p.rolEnEquipo)}
-                >
-                  quitar
-                </button>
-              )}
-            </span>
-          ))
+      <div className="bloque-ficha">
+        <h2>🧑‍🏫 Personal del equipo</h2>
+        <div className="etiquetas-roles" style={{ marginBottom: 12 }}>
+          {equipo.personal.length === 0 ? (
+            <span className="nota">Sin personal asignado todavía.</span>
+          ) : (
+            equipo.personal.map((p) => (
+              <span key={`${p.usuarioId}-${p.rolEnEquipo}`} className="etiqueta-suave">
+                {p.nombreCompleto} · {p.rolEnEquipo}
+                {puedeGestionar && (
+                  <button
+                    className="boton-enlace"
+                    style={{ marginLeft: 6 }}
+                    onClick={() => quitarPersonal(p.usuarioId, p.rolEnEquipo)}
+                  >
+                    quitar
+                  </button>
+                )}
+              </span>
+            ))
+          )}
+        </div>
+        {puedeGestionar && usuariosDisponibles && (
+          <FormularioPersonal usuarios={usuariosDisponibles} onAsignar={asignarPersonal} />
+        )}
+        {puedeGestionar && !usuariosDisponibles && (
+          <p className="nota">Solo administración puede asignar personal nuevo desde aquí.</p>
         )}
       </div>
-      {puedeGestionar && usuariosDisponibles && (
-        <FormularioPersonal usuarios={usuariosDisponibles} onAsignar={asignarPersonal} />
-      )}
-      {puedeGestionar && !usuariosDisponibles && (
-        <p className="nota">Solo administración puede asignar personal nuevo desde aquí.</p>
-      )}
 
-      <h2>Plantilla ({equipo.deportistas.length})</h2>
-      {equipo.deportistas.length === 0 ? (
-        <p className="nota">Todavía no hay deportistas fichados por este equipo esta temporada.</p>
-      ) : (
-        <div className="tabla-scroll">
-          <table className="tabla-usuarios">
-            <thead>
-              <tr>
-                <th>Dorsal</th>
-                <th>Nombre</th>
-                <th>Nº socio</th>
-                <th>Ficha técnica</th>
-                {puedeGestionar && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {equipo.deportistas.map((d) => (
-                <FilaJugador
-                  key={d.id}
-                  jugador={d}
-                  deporteNombre={equipo.deporteNombre}
-                  puedeGestionar={puedeGestionar}
-                  onGuardarDorsal={(dorsal) => guardarDorsal(d.id, dorsal)}
-                  onGuardarFicha={(datos) => guardarFichaTecnica(d.id, datos)}
-                  onSubirFoto={(archivo) => subirFotoDeportista(d.id, archivo)}
-                  onQuitar={() => quitarDeportista(d.id)}
-                />
-              ))}
-            </tbody>
-          </table>
+      <div className="bloque-ficha">
+        <h2>👥 Plantilla ({equipo.deportistas.length})</h2>
+        {equipo.deportistas.length === 0 ? (
+          <p className="nota">Todavía no hay deportistas fichados por este equipo esta temporada.</p>
+        ) : (
+          <div className="tabla-scroll">
+            <table className="tabla-usuarios">
+              <thead>
+                <tr>
+                  <th>Dorsal</th>
+                  <th>Nombre</th>
+                  <th>Nº socio</th>
+                  <th>Ficha técnica</th>
+                  {puedeGestionar && <th></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {equipo.deportistas.map((d) => (
+                  <FilaJugador
+                    key={d.id}
+                    jugador={d}
+                    deporteNombre={equipo.deporteNombre}
+                    puedeGestionar={puedeGestionar}
+                    onGuardarDorsal={(dorsal) => guardarDorsal(d.id, dorsal)}
+                    onGuardarFicha={(datos) => guardarFichaTecnica(d.id, datos)}
+                    onSubirFoto={(archivo) => subirFotoDeportista(d.id, archivo)}
+                    onQuitar={() => quitarDeportista(d.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {puedeGestionar && (
+          <FormularioFichar candidatos={candidatos} onFichar={ficharDeportista} />
+        )}
+      </div>
+
+      {equipo.deporteTipo === 'equipo' && (
+        <div className="bloque-ficha">
+          <PartidosEquipo equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
         </div>
       )}
 
-      {puedeGestionar && (
-        <FormularioFichar candidatos={candidatos} onFichar={ficharDeportista} />
-      )}
+      <div className="bloque-ficha">
+        <AsistenciaEquipo equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
+      </div>
 
-      {equipo.deporteTipo === 'equipo' && (
-        <PartidosEquipo equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
-      )}
-
-      <AsistenciaEquipo equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
-
-      <PlanificacionMensual equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
+      <div className="bloque-ficha">
+        <PlanificacionMensual equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
+      </div>
     </div>
   );
 }
@@ -965,9 +988,12 @@ function PartidosEquipo({ equipoId, temporadaId, puedeGestionar }) {
   }, [equipoId, temporadaId]);
 
   async function crearPartido(datos) {
-    await api.post('/partidos', { ...datos, equipoId, temporadaId });
+    const creado = await api.post('/partidos', { ...datos, equipoId, temporadaId });
     setMostrarFormulario(false);
-    cargar();
+    await cargar();
+    // Abrimos el Directo del partido recién creado directamente, para no
+    // obligar a un segundo clic buscándolo en la tabla.
+    setPartidoDirectoId(creado.id);
   }
 
   async function guardarResultado(partidoId, resultadoPropio, resultadoRival) {
@@ -996,7 +1022,7 @@ function PartidosEquipo({ equipoId, temporadaId, puedeGestionar }) {
           {mostrarFormulario ? 'Cancelar' : '+ Nuevo partido'}
         </button>
       )}
-      {mostrarFormulario && <FormularioPartido onCrear={crearPartido} />}
+      {mostrarFormulario && <FormularioPartido equipoId={equipoId} temporadaId={temporadaId} onCrear={crearPartido} />}
       {cargando ? (
         <p className="cargando">Cargando…</p>
       ) : partidos.length === 0 ? (
@@ -1056,7 +1082,7 @@ function FilaPartido({ partido: p, puedeGestionar, onGuardarResultado, onElimina
         {p.fecha?.slice(0, 10)}{p.hora ? ` ${p.hora.slice(0, 5)}` : ''}
         {p.enDirecto && <span className="texto-peligro"> · EN DIRECTO</span>}
       </td>
-      <td>{p.rival}{p.competicion ? <span className="nota"> ({p.competicion})</span> : ''}</td>
+      <td>{p.rival}{(p.competicionNombre || p.competicion) ? <span className="nota"> ({p.competicionNombre || p.competicion})</span> : ''}</td>
       <td>{p.localVisitante === 'local' ? 'Local' : 'Visitante'}</td>
       <td>
         {puedeGestionar ? (
@@ -1112,19 +1138,24 @@ function formatoReloj(segundosTotales) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-const ACCIONES_DIRECTO = [
-  { tipo: 'gol_propio', etiqueta: 'Gol propio' },
-  { tipo: 'gol_rival', etiqueta: 'Gol rival' },
-  { tipo: 'tiro_propio', etiqueta: 'Tiro propio' },
-  { tipo: 'tiro_rival', etiqueta: 'Tiro rival' },
-  { tipo: 'corner_favor', etiqueta: 'Córner a favor' },
-  { tipo: 'corner_contra', etiqueta: 'Córner en contra' },
-  { tipo: 'falta_favor', etiqueta: 'Falta a favor' },
-  { tipo: 'falta_contra', etiqueta: 'Falta en contra' },
-  { tipo: 'tarjeta_amarilla_propio', etiqueta: 'Amarilla propia' },
-  { tipo: 'tarjeta_amarilla_rival', etiqueta: 'Amarilla rival' },
-  { tipo: 'tarjeta_roja_propio', etiqueta: 'Roja propia' },
-  { tipo: 'tarjeta_roja_rival', etiqueta: 'Roja rival' },
+// Un botón grande por acción, con icono y color propio, agrupados en dos
+// columnas (nosotros / rival) para que el entrenador toque sin tener que
+// leer texto en mitad de un partido real.
+const ACCIONES_PROPIAS = [
+  { tipo: 'gol_propio', etiqueta: 'Gol', icono: '⚽', clase: 'accion-gol' },
+  { tipo: 'tiro_propio', etiqueta: 'Tiro', icono: '🎯', clase: 'accion-tiro' },
+  { tipo: 'corner_favor', etiqueta: 'Córner', icono: '🚩', clase: 'accion-corner' },
+  { tipo: 'falta_favor', etiqueta: 'Falta a favor', icono: '⚠️', clase: 'accion-falta' },
+  { tipo: 'tarjeta_amarilla_propio', etiqueta: 'Amarilla', icono: '🟨', clase: 'accion-amarilla' },
+  { tipo: 'tarjeta_roja_propio', etiqueta: 'Roja', icono: '🟥', clase: 'accion-roja' },
+];
+const ACCIONES_RIVAL = [
+  { tipo: 'gol_rival', etiqueta: 'Gol', icono: '⚽', clase: 'accion-gol' },
+  { tipo: 'tiro_rival', etiqueta: 'Tiro', icono: '🎯', clase: 'accion-tiro' },
+  { tipo: 'corner_contra', etiqueta: 'Córner', icono: '🚩', clase: 'accion-corner' },
+  { tipo: 'falta_contra', etiqueta: 'Falta en contra', icono: '⚠️', clase: 'accion-falta' },
+  { tipo: 'tarjeta_amarilla_rival', etiqueta: 'Amarilla', icono: '🟨', clase: 'accion-amarilla' },
+  { tipo: 'tarjeta_roja_rival', etiqueta: 'Roja', icono: '🟥', clase: 'accion-roja' },
 ];
 const TIPOS_CON_OCASION_CLARA = new Set(['tiro_propio', 'tiro_rival']);
 const TIPOS_CON_JUGADOR = new Set([
@@ -1436,147 +1467,185 @@ function MarcadorDirecto({ partidoId, equipoId, puedeGestionar, onCambio }) {
   const enMarcha = partido.enDirecto && !finalizado;
 
   return (
-    <div className="tarjeta" style={{ maxWidth: 'none', margin: '8px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-        <strong style={{ fontSize: 28 }}>{partido.resultadoPropio ?? 0} - {partido.resultadoRival ?? 0}</strong>
-        <span className="nota">vs {partido.rival}</span>
+    <div className="tarjeta marcador-directo">
+      <div className="directo-cabecera">
+        <span className="directo-rival">Nosotros vs {partido.rival}</span>
+        <span className="directo-marcador">{partido.resultadoPropio ?? 0} - {partido.resultadoRival ?? 0}</span>
         {enMarcha && (
-          <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-primario)' }}>
-            {partido.periodo} · {formatoReloj(segundosParteActual)}
-            {partido.minutoActual != null ? ` (min. ${partido.minutoActual})` : ''}
-            {!partido.periodoIniciadoEn && ' · en pausa'}
+          <span className={`directo-reloj${!partido.periodoIniciadoEn ? ' en-pausa' : ''}`}>
+            ⏱ {formatoReloj(segundosParteActual)}
+            {partido.minutoActual != null ? ` · min. ${partido.minutoActual}` : ''}
+            {!partido.periodoIniciadoEn && ' · pausa'}
           </span>
         )}
-        {finalizado && <span className="nota">Finalizado</span>}
-        {antesDeEmpezar && <span className="nota">Sin empezar</span>}
+        <span className="directo-estado">
+          {finalizado ? 'Finalizado' : antesDeEmpezar ? 'Sin empezar' : partido.periodo}
+        </span>
       </div>
 
-      {antesDeEmpezar && (
-        <AlineacionPartido
-          partidoId={partidoId} equipoId={equipoId} puedeGestionar={puedeGestionar}
-          convocados={convocados} onGuardado={cargar}
-        />
-      )}
-      {antesDeEmpezar && puedeGestionar && (
-        convocados.length > 0
-          ? <ConfiguracionDirecto partesIniciales={partido.configuracionPartes} onIniciar={iniciarDirecto} />
-          : <p className="nota">Añade al menos un convocado a la convocatoria antes de arrancar el directo.</p>
-      )}
+      <div className="directo-cuerpo">
+        {antesDeEmpezar && (
+          <AlineacionPartido
+            partidoId={partidoId} equipoId={equipoId} puedeGestionar={puedeGestionar}
+            convocados={convocados} onGuardado={cargar}
+          />
+        )}
+        {antesDeEmpezar && puedeGestionar && (
+          convocados.length > 0
+            ? <ConfiguracionDirecto partesIniciales={partido.configuracionPartes} onIniciar={iniciarDirecto} />
+            : <p className="nota">Añade al menos un convocado a la convocatoria antes de arrancar el directo.</p>
+        )}
 
-      {!antesDeEmpezar && (
-        <div style={{ margin: '10px 0' }}>
-          <button type="button" className="boton-lesion" onClick={() => setMostrarConvocatoria((v) => !v)}>
-            {mostrarConvocatoria ? 'Ocultar convocatoria' : `Convocatoria (${convocados.length})`}
-          </button>
-          {' '}
-          <button type="button" className="boton-lesion" onClick={() => setMostrarResumen((v) => !v)}>
-            {mostrarResumen ? 'Ocultar resumen' : 'Ver resumen'}
-          </button>
-        </div>
-      )}
-      {!antesDeEmpezar && mostrarConvocatoria && (
-        <AlineacionPartido
-          partidoId={partidoId} equipoId={equipoId} puedeGestionar={puedeGestionar}
-          convocados={convocados} onGuardado={cargar}
-        />
-      )}
-      {!antesDeEmpezar && mostrarResumen && <ResumenDirecto partidoId={partidoId} />}
+        {!antesDeEmpezar && (
+          <div className="directo-controles">
+            <button type="button" className="boton-lesion" onClick={() => setMostrarConvocatoria((v) => !v)}>
+              👥 {mostrarConvocatoria ? 'Ocultar convocatoria' : `Convocatoria (${convocados.length})`}
+            </button>
+            <button type="button" className="boton-lesion" onClick={() => setMostrarResumen((v) => !v)}>
+              📊 {mostrarResumen ? 'Ocultar resumen' : 'Ver resumen'}
+            </button>
+          </div>
+        )}
+        {!antesDeEmpezar && mostrarConvocatoria && (
+          <AlineacionPartido
+            partidoId={partidoId} equipoId={equipoId} puedeGestionar={puedeGestionar}
+            convocados={convocados} onGuardado={cargar}
+          />
+        )}
+        {!antesDeEmpezar && mostrarResumen && <ResumenDirecto partidoId={partidoId} />}
 
-      {enMarcha && puedeGestionar && (
-        <>
-          <div className="checkboxes-roles" style={{ margin: '10px 0' }}>
-            {partido.periodoIniciadoEn ? (
-              <button type="button" onClick={pausar}>⏸ Pausar</button>
-            ) : (
-              <button type="button" onClick={reanudar}>▶ Reanudar</button>
+        {enMarcha && puedeGestionar && (
+          <>
+            <div className="directo-controles">
+              {partido.periodoIniciadoEn ? (
+                <button type="button" onClick={pausar}>⏸ Pausar</button>
+              ) : (
+                <button type="button" onClick={reanudar}>▶ Reanudar</button>
+              )}
+              <button type="button" className="boton-lesion" onClick={siguienteParte}>⏭ Siguiente parte</button>
+              <button type="button" className="boton-lesion" onClick={anadirParteExtra}>+ Parte extra</button>
+            </div>
+
+            <div className="directo-posesion">
+              <button
+                type="button"
+                className={`boton-posesion${partido.posesionActual === 'propio' ? ' activa' : ''}`}
+                onClick={() => cambiarPosesion('propio')}
+              >
+                🔵 Posesión nuestra
+              </button>
+              <button
+                type="button"
+                className={`boton-posesion${partido.posesionActual === 'rival' ? ' activa' : ''}`}
+                onClick={() => cambiarPosesion('rival')}
+              >
+                ⚪ Posesión rival
+              </button>
+            </div>
+
+            {convocados.length > 0 && (
+              <div className="directo-jugadores">
+                <p className="nota" style={{ margin: '0 0 6px' }}>
+                  Jugador de la próxima acción (opcional — se aplica a acciones propias):
+                </p>
+                <div className="chips-jugadores">
+                  {convocados.map((c) => (
+                    <button
+                      key={c.deportistaId}
+                      type="button"
+                      className={`chip-jugador${jugadorId === c.deportistaId ? ' activo' : ''}`}
+                      onClick={() => setJugadorId(jugadorId === c.deportistaId ? '' : c.deportistaId)}
+                    >
+                      {c.dorsal != null ? `${c.dorsal} · ` : ''}{c.nombre}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
-            <button type="button" className="boton-lesion" onClick={siguienteParte}>⏭ Siguiente parte</button>
-            <button type="button" className="boton-lesion" onClick={anadirParteExtra}>+ Añadir parte</button>
-          </div>
 
-          <div className="checkboxes-roles" style={{ margin: '10px 0' }}>
-            <button
-              type="button"
-              className={partido.posesionActual === 'propio' ? '' : 'boton-lesion'}
-              onClick={() => cambiarPosesion('propio')}
-            >
-              Posesión nuestra
-            </button>
-            <button
-              type="button"
-              className={partido.posesionActual === 'rival' ? '' : 'boton-lesion'}
-              onClick={() => cambiarPosesion('rival')}
-            >
-              Posesión rival
-            </button>
-          </div>
+            <div className="directo-ocasion">
+              <label>
+                <input type="checkbox" checked={ocasionClara} onChange={(e) => setOcasionClara(e.target.checked)} />
+                🎯 Marcar el próximo tiro como ocasión clara
+              </label>
+            </div>
 
-          {convocados.length > 0 && (
-            <div style={{ margin: '10px 0' }}>
-              <p className="nota" style={{ margin: '0 0 4px' }}>
-                Jugador de la próxima acción (opcional — se aplica a acciones propias):
-              </p>
-              <div className="checkboxes-roles">
-                {convocados.map((c) => (
-                  <button
-                    key={c.deportistaId}
-                    type="button"
-                    className={jugadorId === c.deportistaId ? '' : 'boton-lesion'}
-                    onClick={() => setJugadorId(jugadorId === c.deportistaId ? '' : c.deportistaId)}
-                  >
-                    {c.dorsal != null ? `${c.dorsal} · ` : ''}{c.nombre}
-                  </button>
-                ))}
+            <div className="columnas-acciones">
+              <div className="columna-acciones">
+                <h4>Nosotros</h4>
+                <div className="grid-botones-accion">
+                  {ACCIONES_PROPIAS.map((a) => (
+                    <button
+                      key={a.tipo} type="button"
+                      className={`boton-accion-directo ${a.clase}`}
+                      onClick={() => registrar(a.tipo)}
+                    >
+                      <span className="icono-accion">{a.icono}</span>
+                      {a.etiqueta}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="columna-acciones">
+                <h4>Rival</h4>
+                <div className="grid-botones-accion">
+                  {ACCIONES_RIVAL.map((a) => (
+                    <button
+                      key={a.tipo} type="button"
+                      className={`boton-accion-directo ${a.clase}`}
+                      onClick={() => registrar(a.tipo)}
+                    >
+                      <span className="icono-accion">{a.icono}</span>
+                      {a.etiqueta}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
+          </>
+        )}
+
+        <div className="directo-eventos">
+          <h3 style={{ fontSize: 14, margin: '12px 0 6px' }}>Eventos</h3>
+          {eventos.length === 0 ? (
+            <p className="nota">Todavía no hay eventos registrados.</p>
+          ) : (
+            <ul className="lista-eventos-directo">
+              {eventos.map((e) => (
+                <li key={e.id} className="evento-directo">
+                  <span className="minuto-evento">{e.minuto != null ? `${e.minuto}'` : '—'}</span>
+                  <span>
+                    {ETIQUETAS_EVENTO[e.tipo] || e.tipo}
+                    {e.ocasionClara ? ' (ocasión clara)' : ''}
+                    {e.deportistaNombre ? ` — ${e.deportistaNombre}` : ''}
+                    {e.descripcion ? ` — ${e.descripcion}` : ''}
+                  </span>
+                  {puedeGestionar && (
+                    <button className="boton-enlace" style={{ marginLeft: 'auto' }} onClick={() => eliminarEvento(e.id)}>quitar</button>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
-
-          <div style={{ margin: '10px 0' }}>
-            <label style={{ display: 'inline-flex', flexDirection: 'row', alignItems: 'center', gap: 6, fontSize: 13 }}>
-              <input type="checkbox" checked={ocasionClara} onChange={(e) => setOcasionClara(e.target.checked)} />
-              Marcar el próximo tiro como ocasión clara
-            </label>
-          </div>
-
-          <div className="checkboxes-roles" style={{ margin: '10px 0' }}>
-            {ACCIONES_DIRECTO.map((a) => (
-              <button key={a.tipo} type="button" className="boton-lesion" onClick={() => registrar(a.tipo)}>
-                {a.etiqueta}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      <h3 style={{ fontSize: 14, margin: '12px 0 6px' }}>Eventos</h3>
-      {eventos.length === 0 ? (
-        <p className="nota">Todavía no hay eventos registrados.</p>
-      ) : (
-        <ul className="lista-dashboard" style={{ marginBottom: 12 }}>
-          {eventos.map((e) => (
-            <li key={e.id}>
-              {e.minuto != null ? `${e.minuto}' ` : ''}{ETIQUETAS_EVENTO[e.tipo] || e.tipo}
-              {e.ocasionClara ? ' (ocasión clara)' : ''}
-              {e.deportistaNombre ? ` — ${e.deportistaNombre}` : ''}
-              {e.descripcion ? ` — ${e.descripcion}` : ''}
-              {puedeGestionar && (
-                <button className="boton-enlace" style={{ marginLeft: 6 }} onClick={() => eliminarEvento(e.id)}>quitar</button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function FormularioPartido({ onCrear }) {
+function FormularioPartido({ equipoId, temporadaId, onCrear }) {
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [rival, setRival] = useState('');
   const [localVisitante, setLocalVisitante] = useState('local');
-  const [competicion, setCompeticion] = useState('');
+  const [competicionId, setCompeticionId] = useState('');
+  const [competiciones, setCompeticiones] = useState([]);
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    if (!equipoId || !temporadaId) return;
+    api.get(`/competiciones?equipoId=${equipoId}&temporadaId=${temporadaId}`).then(setCompeticiones).catch(() => {});
+  }, [equipoId, temporadaId]);
 
   async function manejarEnvio(evento) {
     evento.preventDefault();
@@ -1584,9 +1653,8 @@ function FormularioPartido({ onCrear }) {
     setError('');
     setEnviando(true);
     try {
-      await onCrear({ fecha, rival, localVisitante, competicion: competicion || undefined });
+      await onCrear({ fecha, rival, localVisitante, competicionId: competicionId || undefined });
       setRival('');
-      setCompeticion('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1602,9 +1670,17 @@ function FormularioPartido({ onCrear }) {
         <option value="local">Local</option>
         <option value="visitante">Visitante</option>
       </select>
-      <input placeholder="Competición (opcional)" value={competicion} onChange={(e) => setCompeticion(e.target.value)} />
+      <select value={competicionId} onChange={(e) => setCompeticionId(e.target.value)}>
+        <option value="">Amistoso (sin competición)</option>
+        {competiciones.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+      </select>
       <button type="submit" disabled={enviando}>{enviando ? 'Creando…' : 'Crear partido'}</button>
       {error && <p className="error">{error}</p>}
+      {competiciones.length === 0 && (
+        <p className="nota" style={{ width: '100%', margin: '4px 0 0' }}>
+          Sin competiciones dadas de alta todavía para este equipo — puedes crearlas en la sección "Competición" del menú.
+        </p>
+      )}
     </form>
   );
 }

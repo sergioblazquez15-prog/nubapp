@@ -10,6 +10,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { BarraCuotaMini } from '../components/BarraCuota';
+import { colorEtiqueta, iniciales } from '../utils/colorEtiqueta';
 
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
 
@@ -150,42 +152,27 @@ export default function Deportistas() {
       ) : deportistas.length === 0 ? (
         <p className="nota">No hay deportistas que coincidan con estos filtros.</p>
       ) : (
-        <div className="tabla-scroll">
-          <table className="tabla-usuarios">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Fecha nacimiento</th>
-                <th>Nº socio</th>
-                <th>Deportes</th>
-                <th>Lesionado</th>
-                <th>Estado</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {deportistas.map((d) => (
-                <FilaDeportista
-                  key={d.id}
-                  deportista={d}
-                  puedeGestionar={puedeGestionar}
-                  deportesDisponibles={deportesDisponibles}
-                  onGuardarDeportes={(ids) => guardarDeportes(d.id, ids)}
-                  onAlternarLesion={() => alternarLesion(d)}
-                  onDarDeBaja={() => darDeBaja(d.id)}
-                  onDarDeAlta={() => darDeAlta(d.id)}
-                  onVerFicha={() => setDeportistaAbiertoId(d.id)}
-                />
-              ))}
-            </tbody>
-          </table>
+        <div className="tarjetas-dashboard">
+          {deportistas.map((d) => (
+            <TarjetaDeportista
+              key={d.id}
+              deportista={d}
+              puedeGestionar={puedeGestionar}
+              deportesDisponibles={deportesDisponibles}
+              onGuardarDeportes={(ids) => guardarDeportes(d.id, ids)}
+              onAlternarLesion={() => alternarLesion(d)}
+              onDarDeBaja={() => darDeBaja(d.id)}
+              onDarDeAlta={() => darDeAlta(d.id)}
+              onVerFicha={() => setDeportistaAbiertoId(d.id)}
+            />
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-function FilaDeportista({ deportista: d, puedeGestionar, deportesDisponibles, onGuardarDeportes, onAlternarLesion, onDarDeBaja, onDarDeAlta, onVerFicha }) {
+function TarjetaDeportista({ deportista: d, puedeGestionar, deportesDisponibles, onGuardarDeportes, onAlternarLesion, onDarDeBaja, onDarDeAlta, onVerFicha }) {
   const [editandoDeportes, setEditandoDeportes] = useState(false);
   const [seleccionados, setSeleccionados] = useState(d.deportes.map((dep) => dep.id));
 
@@ -201,14 +188,23 @@ function FilaDeportista({ deportista: d, puedeGestionar, deportesDisponibles, on
   }
 
   return (
-    <tr className={d.inactivo ? 'fila-inactiva' : ''}>
-      <td>
-        {d.nombre} {d.apellidos}
-        {d.nombreDeportivo && <span className="nota"> ({d.nombreDeportivo})</span>}
-      </td>
-      <td>{d.fechaNacimiento?.slice(0, 10) || '—'}</td>
-      <td>{d.numeroSocio || '—'}</td>
-      <td>
+    <div className={`tarjeta tarjeta-dashboard tarjeta-persona${d.inactivo ? ' tarjeta-inactiva' : ''}`}>
+      <div className="cabecera-persona">
+        <span className={`avatar-circulo ${colorEtiqueta(d.nombre + d.apellidos)}`}>
+          {iniciales(d.nombre, d.apellidos)}
+        </span>
+        <div className="datos-cabecera-persona">
+          <button className="boton-enlace nombre-tarjeta-persona" onClick={onVerFicha}>
+            {d.nombre} {d.apellidos}
+          </button>
+          {d.nombreDeportivo && <span className="nota" style={{ fontSize: 12.5 }}>«{d.nombreDeportivo}»</span>}
+        </div>
+        <span className={`badge-estado ${d.inactivo ? 'badge-inactivo' : 'badge-activo'}`}>
+          {d.inactivo ? 'Inactivo' : 'Activo'}
+        </span>
+      </div>
+
+      <div className="etiquetas-roles" style={{ margin: '4px 0' }}>
         {editandoDeportes ? (
           <div className="checkboxes-roles">
             {deportesDisponibles.map((dep) => (
@@ -224,33 +220,40 @@ function FilaDeportista({ deportista: d, puedeGestionar, deportesDisponibles, on
             <button onClick={guardar}>Guardar</button>
           </div>
         ) : (
-          <div className="etiquetas-roles">
+          <>
             {d.deportes.length === 0
-              ? <span className="nota">—</span>
-              : d.deportes.map((dep) => <span key={dep.id} className="etiqueta-suave">{dep.nombre}</span>)}
+              ? <span className="nota">Sin deporte asignado</span>
+              : d.deportes.map((dep) => (
+                <span key={dep.id} className={`etiqueta-suave ${colorEtiqueta(dep.nombre)}`}>{dep.nombre}</span>
+              ))}
             {puedeGestionar && (
-              <button className="boton-enlace" onClick={() => setEditandoDeportes(true)}>
-                editar
-              </button>
+              <button className="boton-enlace" onClick={() => setEditandoDeportes(true)}>editar</button>
             )}
-          </div>
+          </>
         )}
-      </td>
-      <td>
-        <button className="boton-lesion" onClick={onAlternarLesion}>
-          {d.lesionado ? `Lesionado${d.lesionDetalle ? `: ${d.lesionDetalle}` : ''}` : 'No'}
-        </button>
-      </td>
-      <td>{d.inactivo ? 'Inactivo' : 'Activo'}</td>
-      <td className="acciones-fila">
+      </div>
+
+      <p className="nota" style={{ margin: 0, fontSize: 13 }}>
+        {d.numeroSocio ? `Nº socio ${d.numeroSocio}` : 'Sin nº de socio'}
+        {d.fechaNacimiento && ` · ${d.fechaNacimiento.slice(0, 10)}`}
+      </p>
+
+      <button
+        className={`boton-lesion boton-ancho ${d.lesionado ? 'boton-lesion-activa' : ''}`}
+        onClick={onAlternarLesion}
+      >
+        {d.lesionado ? `🩹 Lesionado${d.lesionDetalle ? `: ${d.lesionDetalle}` : ''}` : 'Sin lesión'}
+      </button>
+
+      <div className="acciones-fila" style={{ marginTop: 4 }}>
         <button className="boton-lesion" onClick={onVerFicha}>Ver ficha</button>
         {puedeGestionar && (d.inactivo ? (
           <button onClick={onDarDeAlta}>Dar de alta</button>
         ) : (
           <button className="boton-peligro" onClick={onDarDeBaja}>Dar de baja</button>
         ))}
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }
 
@@ -443,59 +446,78 @@ function DeportistaDetalle({ deportistaId, puedeGestionar, onVolver }) {
         ‹ Volver a deportistas
       </button>
 
-      <div className="cabecera">
-        <h1>
-          {deportista.nombre} {deportista.apellidos}
-          {deportista.inactivo && <span className="etiqueta-suave"> inactivo</span>}
-        </h1>
+      <div className="cabecera cabecera-ficha-persona">
+        <span className={`avatar-circulo avatar-circulo-grande ${colorEtiqueta(deportista.nombre + deportista.apellidos)}`}>
+          {iniciales(deportista.nombre, deportista.apellidos)}
+        </span>
+        <div>
+          <h1 style={{ marginBottom: 4 }}>
+            {deportista.nombre} {deportista.apellidos}
+            {deportista.nombreDeportivo && <span className="nota" style={{ fontSize: 16, fontWeight: 400 }}> «{deportista.nombreDeportivo}»</span>}
+          </h1>
+          <div className="etiquetas-roles" style={{ margin: 0 }}>
+            <span className={`badge-estado ${deportista.inactivo ? 'badge-inactivo' : 'badge-activo'}`}>
+              {deportista.inactivo ? 'Inactivo' : 'Activo'}
+            </span>
+            {deportista.deportes?.map((dep) => (
+              <span key={dep.id} className={`etiqueta-suave ${colorEtiqueta(dep.nombre)}`}>{dep.nombre}</span>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <h2>Datos generales</h2>
-      {puedeGestionar ? (
-        <FormularioDatosGenerales deportista={deportista} onGuardar={guardarDatos} />
-      ) : (
-        <DatosGeneralesSoloLectura deportista={deportista} />
-      )}
+      <div className="bloque-ficha">
+        <h2>📋 Datos generales</h2>
+        {puedeGestionar ? (
+          <FormularioDatosGenerales deportista={deportista} onGuardar={guardarDatos} />
+        ) : (
+          <DatosGeneralesSoloLectura deportista={deportista} />
+        )}
+      </div>
 
-      <h2>Historial de deportes practicados</h2>
-      {historial.length === 0 ? (
-        <p className="nota">Todavía no hay ningún periodo registrado.</p>
-      ) : (
-        <div className="tabla-scroll" style={{ marginBottom: 16 }}>
-          <table className="tabla-usuarios">
-            <thead>
-              <tr>
-                <th>Deporte</th>
-                <th>Desde</th>
-                <th>Hasta</th>
-                <th>Estado</th>
-                {puedeGestionar && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {historial.map((periodo) => (
-                <FilaHistorial
-                  key={periodo.id}
-                  periodo={periodo}
-                  puedeGestionar={puedeGestionar}
-                  onGuardarFechas={(fechaAlta, fechaBaja) => guardarFechasPeriodo(periodo.id, fechaAlta, fechaBaja)}
-                  onEliminar={() => eliminarPeriodo(periodo.id)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {puedeGestionar && (
-        <FormularioNuevoPeriodo deportesDisponibles={deportesDisponibles} onAnadir={anadirPeriodo} />
-      )}
+      <div className="bloque-ficha">
+        <h2>📅 Historial de deportes practicados</h2>
+        {historial.length === 0 ? (
+          <p className="nota">Todavía no hay ningún periodo registrado.</p>
+        ) : (
+          <div className="tabla-scroll" style={{ marginBottom: 16 }}>
+            <table className="tabla-usuarios">
+              <thead>
+                <tr>
+                  <th>Deporte</th>
+                  <th>Desde</th>
+                  <th>Hasta</th>
+                  <th>Estado</th>
+                  {puedeGestionar && <th></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {historial.map((periodo) => (
+                  <FilaHistorial
+                    key={periodo.id}
+                    periodo={periodo}
+                    puedeGestionar={puedeGestionar}
+                    onGuardarFechas={(fechaAlta, fechaBaja) => guardarFechasPeriodo(periodo.id, fechaAlta, fechaBaja)}
+                    onEliminar={() => eliminarPeriodo(periodo.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {puedeGestionar && (
+          <FormularioNuevoPeriodo deportesDisponibles={deportesDisponibles} onAnadir={anadirPeriodo} />
+        )}
+      </div>
 
-      <h2>Histórico de cuotas</h2>
-      {puedeVerCuotas ? (
-        <HistoricoCuotas deportistaId={deportistaId} />
-      ) : (
-        <p className="nota">No tienes acceso a la información económica de este deportista.</p>
-      )}
+      <div className="bloque-ficha">
+        <h2>💶 Histórico de cuotas</h2>
+        {puedeVerCuotas ? (
+          <HistoricoCuotas deportistaId={deportistaId} />
+        ) : (
+          <p className="nota">No tienes acceso a la información económica de este deportista.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -523,18 +545,22 @@ function HistoricoCuotas({ deportistaId }) {
         <thead>
           <tr>
             <th>Deporte</th>
+            <th>Concepto</th>
             <th>Total a pagar</th>
             <th>Pagado</th>
             <th>Pendiente</th>
+            <th>Progreso</th>
           </tr>
         </thead>
         <tbody>
           {cuotas.map((c) => (
             <tr key={c.id}>
               <td>{c.deporteNombre}</td>
+              <td>{c.concepto}</td>
               <td>{c.totalAPagar.toFixed(2)} €</td>
               <td>{c.totalPagado.toFixed(2)} €</td>
               <td className={c.pendiente > 0.001 ? 'texto-peligro' : ''}>{c.pendiente.toFixed(2)} €</td>
+              <td><BarraCuotaMini pagado={c.totalPagado} total={c.totalAPagar} /></td>
             </tr>
           ))}
         </tbody>
@@ -682,7 +708,11 @@ function FilaHistorial({ periodo, puedeGestionar, onGuardarFechas, onEliminar })
           fechaBaja || 'Actual'
         )}
       </td>
-      <td>{fechaBaja ? 'Finalizado' : 'Actual'}</td>
+      <td>
+        <span className={`badge-estado ${fechaBaja ? 'badge-inactivo' : 'badge-activo'}`}>
+          {fechaBaja ? 'Finalizado' : 'Actual'}
+        </span>
+      </td>
       {puedeGestionar && (
         <td className="acciones-fila">
           <button className="boton-peligro" onClick={onEliminar}>Eliminar</button>

@@ -26,8 +26,9 @@ export default function Login() {
 
   return (
     <div className="pantalla-login">
-      <form className="tarjeta" onSubmit={manejarEnvio}>
-        <h1>NUBAPP</h1>
+      <form className="tarjeta tarjeta-login" onSubmit={manejarEnvio}>
+        <span className="escudo-login">🏅</span>
+        <h1 className="marca-login">NUBAPP</h1>
         <p className="subtitulo">AD Nuevo Baztán</p>
 
         <label>
@@ -48,7 +49,7 @@ export default function Login() {
 
         {error && <p className="error">{error}</p>}
 
-        <button type="submit" disabled={enviando}>
+        <button type="submit" className="boton-ancho boton-login" disabled={enviando}>
           {enviando ? 'Entrando…' : 'Entrar'}
         </button>
       </form>

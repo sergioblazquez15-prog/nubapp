@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { BarraCuota, BarraCuotaMini } from '../components/BarraCuota';
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -16,6 +17,7 @@ const FORMAS_PAGO = ['efectivo', 'domiciliado', 'tpv', 'transferencia'];
 function euros(valor) {
   return `${Number(valor || 0).toFixed(2)} €`;
 }
+
 
 export default function Cuotas() {
   const { tieneRol } = useAuth();
@@ -153,6 +155,7 @@ export default function Cuotas() {
                 <th>Deportista</th>
                 <th>Nº socio</th>
                 <th>Deporte</th>
+                <th>Concepto</th>
                 <th>Total a pagar</th>
                 <th>Pagado</th>
                 <th>Pendiente</th>
@@ -165,9 +168,13 @@ export default function Cuotas() {
                   <td>{c.deportistaNombre} {c.deportistaApellidos}</td>
                   <td>{c.numeroSocio || '—'}</td>
                   <td>{c.deporteNombre}</td>
+                  <td>{c.concepto}</td>
                   <td>{euros(c.totalAPagar)}</td>
                   <td>{euros(c.totalPagado)}</td>
-                  <td className={c.pendiente > 0.001 ? 'texto-peligro' : ''}>{euros(c.pendiente)}</td>
+                  <td>
+                    <div className={c.pendiente > 0.001 ? 'texto-peligro' : ''} style={{ marginBottom: 4 }}>{euros(c.pendiente)}</div>
+                    <BarraCuotaMini pagado={c.totalPagado} total={c.totalAPagar} />
+                  </td>
                   <td className="acciones-fila">
                     <button className="boton-lesion" onClick={() => setCuotaAbiertaId(c.id)}>
                       {puedeGestionar ? 'Gestionar' : 'Ver detalle'}
@@ -236,6 +243,7 @@ function FormularioNuevaCuota({ deportes, onCrear }) {
   const [deporteId, setDeporteId] = useState('');
   const [deportistas, setDeportistas] = useState([]);
   const [deportistaId, setDeportistaId] = useState('');
+  const [concepto, setConcepto] = useState('');
   const [importeCuota, setImporteCuota] = useState('');
   const [importeRopa, setImporteRopa] = useState('');
   const [otrosImportes, setOtrosImportes] = useState('');
@@ -252,13 +260,14 @@ function FormularioNuevaCuota({ deportes, onCrear }) {
 
   async function manejarEnvio(evento) {
     evento.preventDefault();
-    if (!deporteId || !deportistaId) return;
+    if (!deporteId || !deportistaId || !concepto.trim()) return;
     setError('');
     setEnviando(true);
     try {
       await onCrear({
         deportistaId,
         deporteId,
+        concepto: concepto.trim(),
         importeCuota: importeCuota ? Number(importeCuota) : 0,
         importeRopa: importeRopa ? Number(importeRopa) : 0,
         otrosImportes: otrosImportes ? Number(otrosImportes) : 0,
@@ -289,6 +298,13 @@ function FormularioNuevaCuota({ deportes, onCrear }) {
           <option value="" disabled>{deporteId ? 'Selecciona un deportista…' : 'Elige antes un deporte'}</option>
           {deportistas.map((d) => <option key={d.id} value={d.id}>{d.nombre} {d.apellidos}</option>)}
         </select>
+      </label>
+      <label>
+        Concepto (ej: Septiembre, Segundo trimestre, Liga de pádel…)
+        <input value={concepto} onChange={(e) => setConcepto(e.target.value)} placeholder="Septiembre" required />
+        <span className="nota" style={{ fontSize: 12 }}>
+          Un mismo deportista puede tener varias cuotas del mismo deporte si usas un concepto distinto para cada una.
+        </span>
       </label>
       <label>
         Importe cuota (€/mes o total, como lo lleves)
@@ -324,6 +340,7 @@ function FormularioEdicionGrupal({ deportes, onAplicar }) {
   const [deporteId, setDeporteId] = useState('');
   const [deportistas, setDeportistas] = useState([]);
   const [seleccionados, setSeleccionados] = useState([]);
+  const [concepto, setConcepto] = useState('');
   const [importeCuota, setImporteCuota] = useState('');
   const [importeRopa, setImporteRopa] = useState('');
   const [otrosImportes, setOtrosImportes] = useState('');
@@ -344,13 +361,14 @@ function FormularioEdicionGrupal({ deportes, onAplicar }) {
 
   async function manejarEnvio(evento) {
     evento.preventDefault();
-    if (!deporteId || seleccionados.length === 0) return;
+    if (!deporteId || seleccionados.length === 0 || !concepto.trim()) return;
     setError('');
     setEnviando(true);
     try {
       await onAplicar({
         deportistaIds: seleccionados,
         deporteId,
+        concepto: concepto.trim(),
         importeCuota: importeCuota ? Number(importeCuota) : 0,
         importeRopa: importeRopa ? Number(importeRopa) : 0,
         otrosImportes: otrosImportes ? Number(otrosImportes) : 0,
@@ -368,8 +386,9 @@ function FormularioEdicionGrupal({ deportes, onAplicar }) {
     <form className="tarjeta formulario-usuario" style={{ maxWidth: 560 }} onSubmit={manejarEnvio}>
       <h3 style={{ margin: 0 }}>Edición grupal</h3>
       <p className="nota" style={{ margin: 0 }}>
-        Aplica el mismo importe y descuento a varios deportistas del mismo deporte a la vez. Si alguno ya tenía
-        cuota esta temporada, se actualiza; si no, se crea.
+        Aplica el mismo importe y descuento a varios deportistas del mismo deporte a la vez, bajo un mismo
+        concepto. Si alguno ya tenía una cuota con ese concepto esta temporada, se actualiza; si no, se crea.
+        Usa un concepto distinto para dar de alta un cargo nuevo sin tocar los que ya existían.
       </p>
       <label>
         Deporte
@@ -377,6 +396,10 @@ function FormularioEdicionGrupal({ deportes, onAplicar }) {
           <option value="" disabled>Selecciona un deporte…</option>
           {deportes.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
         </select>
+      </label>
+      <label>
+        Concepto (ej: Septiembre, Segundo trimestre, Liga de pádel…)
+        <input value={concepto} onChange={(e) => setConcepto(e.target.value)} placeholder="Septiembre" required />
       </label>
       {deporteId && (
         <label>
@@ -483,10 +506,10 @@ function DetalleCuota({ cuotaId, puedeGestionar, onVolver }) {
       <button className="boton-enlace" onClick={onVolver}>‹ Volver a cuotas</button>
 
       <div className="cabecera">
-        <h1>{cuota.deportistaNombre} {cuota.deportistaApellidos} · {cuota.deporteNombre}</h1>
+        <h1>{cuota.deportistaNombre} {cuota.deportistaApellidos} · {cuota.deporteNombre} · {cuota.concepto}</h1>
       </div>
 
-      <div className="checkboxes-roles" style={{ gap: 24, marginBottom: 16 }}>
+      <div className="checkboxes-roles" style={{ gap: 24, marginBottom: 8 }}>
         <div><div className="nota" style={{ fontSize: 12 }}>Total a pagar</div><strong>{euros(cuota.totalAPagar)}</strong></div>
         <div><div className="nota" style={{ fontSize: 12 }}>Pagado</div><strong>{euros(cuota.totalPagado)}</strong></div>
         <div>
@@ -494,6 +517,7 @@ function DetalleCuota({ cuotaId, puedeGestionar, onVolver }) {
           <strong className={cuota.pendiente > 0.001 ? 'texto-peligro' : ''}>{euros(cuota.pendiente)}</strong>
         </div>
       </div>
+      <BarraCuota pagado={cuota.totalPagado} total={cuota.totalAPagar} />
 
       <h2>Importes y descuentos</h2>
       {puedeGestionar ? (
@@ -549,6 +573,7 @@ function FormularioImportes({ cuota, onGuardar }) {
     otrosImportes: cuota.otrosImportes,
     descuentoCuotaPct: cuota.descuentoCuotaPct,
     descuentoRopaPct: cuota.descuentoRopaPct,
+    concepto: cuota.concepto || '',
     notas: cuota.notas || '',
   });
   const [guardando, setGuardando] = useState(false);
@@ -561,6 +586,7 @@ function FormularioImportes({ cuota, onGuardar }) {
 
   async function manejarEnvio(evento) {
     evento.preventDefault();
+    if (!campos.concepto.trim()) return;
     setGuardando(true);
     try {
       await onGuardar({
@@ -569,6 +595,7 @@ function FormularioImportes({ cuota, onGuardar }) {
         otrosImportes: Number(campos.otrosImportes) || 0,
         descuentoCuotaPct: Number(campos.descuentoCuotaPct) || 0,
         descuentoRopaPct: Number(campos.descuentoRopaPct) || 0,
+        concepto: campos.concepto.trim(),
         notas: campos.notas,
       });
       setGuardado(true);
@@ -579,6 +606,10 @@ function FormularioImportes({ cuota, onGuardar }) {
 
   return (
     <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio}>
+      <label>
+        Concepto
+        <input value={campos.concepto} onChange={(e) => actualizar('concepto', e.target.value)} required />
+      </label>
       <label>
         Importe cuota
         <input type="number" min="0" step="0.01" value={campos.importeCuota} onChange={(e) => actualizar('importeCuota', e.target.value)} />

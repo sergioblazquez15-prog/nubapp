@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { colorEtiqueta, iniciales } from '../utils/colorEtiqueta';
 
 export default function Inicio() {
   const { usuario } = useAuth();
@@ -17,7 +18,7 @@ export default function Inicio() {
 
   return (
     <div className="pantalla-inicio">
-      <h1>Hola, {usuario.nombreCompleto}</h1>
+      <h1>Hola, {usuario.nombreCompleto} 👋</h1>
       <p className="subtitulo">
         Rol(es): {usuario.roles.join(', ')}
         {resumen?.temporada && ` · Temporada ${resumen.temporada.nombre}`}
@@ -38,17 +39,31 @@ export default function Inicio() {
   );
 }
 
+function CabeceraTarjetaInicio({ icono, titulo, total }) {
+  return (
+    <div className="cabecera-tarjeta-inicio">
+      <span className="icono-tarjeta-inicio">{icono}</span>
+      <h3>{titulo}</h3>
+      {total > 0 && <span className="contador-tarjeta-inicio">{total}</span>}
+    </div>
+  );
+}
+
 function TarjetaCumpleanos({ items }) {
   return (
-    <div className="tarjeta tarjeta-dashboard">
-      <h3>Cumpleaños de la semana</h3>
+    <div className="tarjeta tarjeta-dashboard tarjeta-inicio acento-dorado">
+      <CabeceraTarjetaInicio icono="🎂" titulo="Cumpleaños de la semana" total={items.length} />
       {items.length === 0 ? (
         <p className="nota">Ninguno esta semana.</p>
       ) : (
-        <ul className="lista-dashboard">
+        <ul className="lista-dashboard lista-inicio">
           {items.map((d) => (
-            <li key={d.deportistaId}>
-              {d.nombre} {d.apellidos} <span className="nota">— {d.fecha.slice(8, 10)}/{d.fecha.slice(5, 7)}</span>
+            <li key={d.deportistaId} className="fila-inicio">
+              <span className={`avatar-circulo avatar-circulo-mini ${colorEtiqueta(d.nombre + d.apellidos)}`}>
+                {iniciales(d.nombre, d.apellidos)}
+              </span>
+              <span>{d.nombre} {d.apellidos}</span>
+              <span className="nota fila-inicio-extra">{d.fecha.slice(8, 10)}/{d.fecha.slice(5, 7)}</span>
             </li>
           ))}
         </ul>
@@ -59,15 +74,19 @@ function TarjetaCumpleanos({ items }) {
 
 function TarjetaLesionados({ items }) {
   return (
-    <div className="tarjeta tarjeta-dashboard">
-      <h3>Lesionados</h3>
+    <div className="tarjeta tarjeta-dashboard tarjeta-inicio acento-rojo">
+      <CabeceraTarjetaInicio icono="🩹" titulo="Lesionados" total={items.length} />
       {items.length === 0 ? (
         <p className="nota">Nadie lesionado ahora mismo.</p>
       ) : (
-        <ul className="lista-dashboard">
+        <ul className="lista-dashboard lista-inicio">
           {items.map((d) => (
-            <li key={d.deportistaId}>
-              {d.nombre} {d.apellidos}{d.detalle && <span className="nota"> — {d.detalle}</span>}
+            <li key={d.deportistaId} className="fila-inicio">
+              <span className={`avatar-circulo avatar-circulo-mini ${colorEtiqueta(d.nombre + d.apellidos)}`}>
+                {iniciales(d.nombre, d.apellidos)}
+              </span>
+              <span>{d.nombre} {d.apellidos}</span>
+              {d.detalle && <span className="nota fila-inicio-extra">{d.detalle}</span>}
             </li>
           ))}
         </ul>
@@ -78,18 +97,26 @@ function TarjetaLesionados({ items }) {
 
 function TarjetaResultados({ items }) {
   return (
-    <div className="tarjeta tarjeta-dashboard">
-      <h3>Resultados recientes</h3>
+    <div className="tarjeta tarjeta-dashboard tarjeta-inicio acento-azul">
+      <CabeceraTarjetaInicio icono="⚽" titulo="Resultados recientes" total={items.length} />
       {items.length === 0 ? (
         <p className="nota">Todavía no hay partidos jugados esta temporada.</p>
       ) : (
-        <ul className="lista-dashboard">
-          {items.map((p, i) => (
-            <li key={i}>
-              {p.equipoNombre} {p.resultadoPropio}-{p.resultadoRival} {p.rival}
-              <span className="nota"> ({p.localVisitante === 'local' ? 'local' : 'visitante'}, {p.fecha?.slice(0, 10)})</span>
-            </li>
-          ))}
+        <ul className="lista-dashboard lista-inicio">
+          {items.map((p, i) => {
+            const propio = Number(p.resultadoPropio);
+            const rival = Number(p.resultadoRival);
+            const resultado = propio > rival ? 'victoria' : propio < rival ? 'derrota' : 'empate';
+            return (
+              <li key={i} className="fila-inicio">
+                <span className={`resultado-badge resultado-${resultado}`}>{p.resultadoPropio}-{p.resultadoRival}</span>
+                <span>{p.equipoNombre} vs {p.rival}</span>
+                <span className="nota fila-inicio-extra">
+                  {p.localVisitante === 'local' ? 'local' : 'visit.'} · {p.fecha?.slice(0, 10)}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -98,16 +125,20 @@ function TarjetaResultados({ items }) {
 
 function TarjetaFaltas({ items }) {
   return (
-    <div className="tarjeta tarjeta-dashboard">
-      <h3>Faltas sin justificar (+3)</h3>
+    <div className="tarjeta tarjeta-dashboard tarjeta-inicio acento-rojo">
+      <CabeceraTarjetaInicio icono="⚠️" titulo="Faltas sin justificar (+3)" total={items.length} />
       {items.length === 0 ? (
         <p className="nota">Nadie por encima de 3 faltas sin justificar.</p>
       ) : (
-        <ul className="lista-dashboard">
+        <ul className="lista-dashboard lista-inicio">
           {items.map((f) => (
-            <li key={f.deportistaId}>
-              {f.nombre} {f.apellidos} <span className="texto-peligro">{f.faltas} faltas</span>
-              <span className="nota"> · {f.equipoNombre}</span>
+            <li key={f.deportistaId} className="fila-inicio">
+              <span className={`avatar-circulo avatar-circulo-mini ${colorEtiqueta(f.nombre + f.apellidos)}`}>
+                {iniciales(f.nombre, f.apellidos)}
+              </span>
+              <span>{f.nombre} {f.apellidos}</span>
+              <span className="texto-peligro fila-inicio-extra">{f.faltas} faltas</span>
+              <span className="nota fila-inicio-extra">{f.equipoNombre}</span>
             </li>
           ))}
         </ul>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { colorEtiqueta } from '../utils/colorEtiqueta';
 
 const ROLES_DISPONIBLES = [
   'administrador',
@@ -135,11 +136,21 @@ function FilaUsuario({ usuario, esAdmin, onCambiarRoles, onDarDeBaja }) {
             ))}
             <button onClick={guardar}>Guardar</button>
           </div>
+        ) : usuario.roles.length === 0 ? (
+          '—'
         ) : (
-          usuario.roles.join(', ') || '—'
+          <div className="etiquetas-roles">
+            {usuario.roles.map((rol) => (
+              <span key={rol} className={`etiqueta-suave ${colorEtiqueta(rol)}`}>{rol}</span>
+            ))}
+          </div>
         )}
       </td>
-      <td>{usuario.inactivo ? 'Inactivo' : 'Activo'}</td>
+      <td>
+        <span className={`badge-estado ${usuario.inactivo ? 'badge-inactivo' : 'badge-activo'}`}>
+          {usuario.inactivo ? 'Inactivo' : 'Activo'}
+        </span>
+      </td>
       {esAdmin && (
         <td className="acciones-fila">
           {!editando && <button onClick={() => setEditando(true)}>Editar roles</button>}

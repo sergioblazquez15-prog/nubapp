@@ -7,6 +7,7 @@ import Equipos from './pages/Equipos';
 import Cuotas from './pages/Cuotas';
 import Ejercicios from './pages/Ejercicios';
 import Metodologia from './pages/Metodologia';
+import Competiciones from './pages/Competiciones';
 import { Layout } from './components/Layout';
 import { RutaProtegida } from './components/RutaProtegida';
 
@@ -54,6 +55,14 @@ export default function App() {
           element={
             <RutaProtegida roles={['administrador', 'direccion_deportiva', 'coordinador', 'entrenador', 'monitor']}>
               <Metodologia />
+            </RutaProtegida>
+          }
+        />
+        <Route
+          path="/competiciones"
+          element={
+            <RutaProtegida roles={['administrador', 'direccion_deportiva', 'coordinador', 'entrenador', 'monitor']}>
+              <Competiciones />
             </RutaProtegida>
           }
         />

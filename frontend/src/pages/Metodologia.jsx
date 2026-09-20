@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { colorEtiqueta } from '../utils/colorEtiqueta';
 
 export default function Metodologia() {
   const { tieneRol } = useAuth();
@@ -105,16 +106,19 @@ export default function Metodologia() {
       ) : documentos.length === 0 ? (
         <p className="nota">No hay documentos de metodología con estos filtros todavía.</p>
       ) : (
-        <ul className="lista-dashboard">
+        <div className="tarjetas-dashboard">
           {documentos.map((doc) => (
-            <li key={doc.id}>
-              <button className="boton-enlace" onClick={() => setDocumentoAbiertoId(doc.id)}>
+            <div key={doc.id} className="tarjeta tarjeta-dashboard tarjeta-metodologia">
+              <span className="icono-metodologia">📚</span>
+              <button className="boton-enlace titulo-tarjeta-ejercicio" onClick={() => setDocumentoAbiertoId(doc.id)}>
                 {doc.titulo}
               </button>
-              <span className="nota"> — {doc.deporteNombre ? doc.deporteNombre : 'Todo el club'}</span>
-            </li>
+              <span className={`etiqueta-suave ${colorEtiqueta(doc.deporteNombre || 'General')}`}>
+                {doc.deporteNombre ? doc.deporteNombre : 'Todo el club'}
+              </span>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
@@ -215,7 +219,7 @@ function DetalleDocumento({ documentoId, puedeEditar, onVolver, onEliminar }) {
       <button className="boton-enlace" onClick={onVolver}>‹ Volver a metodología</button>
 
       <div className="cabecera">
-        <h1>{documento.titulo}</h1>
+        <h1>📚 {documento.titulo}</h1>
         {puedeEditar && (
           <div>
             <button onClick={() => setEditando((v) => !v)}>{editando ? 'Cancelar' : 'Editar'}</button>
@@ -224,15 +228,19 @@ function DetalleDocumento({ documentoId, puedeEditar, onVolver, onEliminar }) {
           </div>
         )}
       </div>
-      <p className="nota">{documento.deporteNombre ? documento.deporteNombre : 'Documento general del club'}</p>
+      <span className={`etiqueta-suave ${colorEtiqueta(documento.deporteNombre || 'General')}`}>
+        {documento.deporteNombre ? documento.deporteNombre : 'Documento general del club'}
+      </span>
 
-      {editando ? (
-        <FormularioEdicion documento={documento} onGuardar={guardar} />
-      ) : (
-        documento.contenido
-          ? <p style={{ whiteSpace: 'pre-wrap' }}>{documento.contenido}</p>
-          : <p className="nota">Este documento todavía no tiene contenido.</p>
-      )}
+      <div className="bloque-ficha" style={{ marginTop: 14 }}>
+        {editando ? (
+          <FormularioEdicion documento={documento} onGuardar={guardar} />
+        ) : (
+          documento.contenido
+            ? <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{documento.contenido}</p>
+            : <p className="nota" style={{ margin: 0 }}>Este documento todavía no tiene contenido.</p>
+        )}
+      </div>
     </div>
   );
 }

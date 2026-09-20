@@ -14,8 +14,9 @@
   --color-error: #9a3324;
   --color-peligro: #9a3324;
   --color-peligro-suave: #f3e4df;
-  --radio: 12px;
-  --sombra: 0 1px 3px rgba(20, 20, 20, 0.08);
+  --radio: 14px;
+  --sombra: 0 2px 8px rgba(20, 20, 20, 0.07);
+  --sombra-tarjeta: 0 4px 16px rgba(20, 20, 20, 0.06);
 }
 
 * {
@@ -35,13 +36,52 @@ body {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  background: radial-gradient(circle at 50% 0%, var(--color-superficie-alt) 0%, var(--color-fondo) 60%);
+}
+
+.tarjeta-login {
+  align-items: center;
+  text-align: center;
+  padding: 36px 32px;
+  max-width: 360px;
+}
+
+.tarjeta-login label {
+  width: 100%;
+  text-align: left;
+}
+
+.escudo-login {
+  font-size: 40px;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-superficie-alt);
+  border: 2px solid var(--color-primario);
+  margin-bottom: 4px;
+}
+
+.marca-login {
+  margin: 0;
+  color: var(--color-primario);
+  letter-spacing: 1px;
+  font-size: 26px;
+}
+
+.boton-login {
+  padding: 13px 18px;
+  font-size: 15.5px;
+  margin-top: 4px;
 }
 
 .tarjeta {
   background: var(--color-superficie);
   padding: 28px;
   border-radius: var(--radio);
-  box-shadow: var(--sombra);
+  box-shadow: var(--sombra-tarjeta);
   width: 100%;
   max-width: 380px;
   display: flex;
@@ -85,16 +125,21 @@ textarea:focus {
 
 button {
   padding: 10px 18px;
-  border-radius: 8px;
+  border-radius: 10px;
   border: none;
   background: var(--color-primario);
   color: var(--color-primario-ink);
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.12s ease, transform 0.08s ease;
 }
 
 button:hover {
   background: var(--color-primario-hover);
+}
+
+button:active {
+  transform: scale(0.97);
 }
 
 button:disabled {
@@ -135,10 +180,13 @@ button:disabled {
 }
 
 .barra-navegacion {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 14px 20px;
+  gap: 20px;
+  padding: 10px 20px;
   background: var(--color-superficie);
   border-bottom: 1px solid var(--color-borde);
   flex-wrap: wrap;
@@ -152,18 +200,37 @@ button:disabled {
 
 .barra-navegacion nav {
   display: flex;
-  gap: 18px;
+  gap: 4px;
   flex: 1;
+  flex-wrap: wrap;
+  overflow-x: auto;
 }
 
-.barra-navegacion a {
-  color: var(--color-texto);
+.enlace-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-texto-tenue);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  white-space: nowrap;
 }
 
-.barra-navegacion a:hover {
-  color: var(--color-primario);
+.enlace-nav .icono-nav {
+  font-size: 15px;
+}
+
+.enlace-nav:hover {
+  background: var(--color-superficie-alt);
+  color: var(--color-texto);
+}
+
+.enlace-nav.activo {
+  background: var(--color-primario);
+  color: var(--color-primario-ink);
 }
 
 .usuario-actual {
@@ -480,3 +547,597 @@ main {
     padding: 16px;
   }
 }
+
+/* ===================== Directo (marcador en vivo) ===================== */
+.marcador-directo {
+  max-width: none;
+  margin: 16px 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  gap: 0;
+}
+
+.directo-cabecera {
+  background: linear-gradient(135deg, var(--color-primario-ink) 0%, #2a2210 100%);
+  color: #fff;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.directo-marcador {
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  line-height: 1;
+}
+
+.directo-rival {
+  font-size: 13px;
+  opacity: 0.75;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.directo-reloj {
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 19px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.14);
+  padding: 6px 16px;
+  border-radius: 99px;
+}
+
+.directo-reloj.en-pausa {
+  background: rgba(154, 51, 36, 0.4);
+}
+
+.directo-estado {
+  font-size: 12.5px;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.directo-cuerpo {
+  padding: 18px 18px 20px;
+}
+
+.directo-controles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.directo-controles button {
+  flex: 1 1 auto;
+  min-width: 130px;
+}
+
+.directo-posesion {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.boton-posesion {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  font-weight: 700;
+  background: var(--color-superficie-alt);
+  color: var(--color-texto-tenue);
+  border: 2px solid transparent;
+}
+
+.boton-posesion.activa {
+  background: var(--color-primario);
+  color: var(--color-primario-ink);
+  border-color: var(--color-primario-hover);
+}
+
+.directo-jugadores {
+  margin-bottom: 14px;
+}
+
+.chips-jugadores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-jugador {
+  padding: 8px 14px;
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--color-superficie-alt);
+  border: 1px solid var(--color-borde);
+  color: var(--color-texto);
+}
+
+.chip-jugador.activo {
+  background: var(--color-primario);
+  color: var(--color-primario-ink);
+  border-color: var(--color-primario-hover);
+}
+
+.directo-ocasion {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.directo-ocasion label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-texto);
+  background: var(--color-superficie-alt);
+  padding: 8px 14px;
+  border-radius: 99px;
+}
+
+.columnas-acciones {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 560px) {
+  .columnas-acciones {
+    grid-template-columns: 1fr;
+  }
+  .directo-marcador {
+    font-size: 36px;
+  }
+}
+
+.columna-acciones h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-texto-tenue);
+  text-align: center;
+}
+
+.grid-botones-accion {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.boton-accion-directo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 14px 6px;
+  min-height: 72px;
+  border-radius: 14px;
+  border: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+  line-height: 1.15;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+
+.boton-accion-directo:hover {
+  filter: brightness(1.08);
+}
+
+.boton-accion-directo:active {
+  transform: scale(0.95);
+}
+
+.boton-accion-directo .icono-accion {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.accion-gol { background: #2e8b45; }
+.accion-tiro { background: #2f6fb0; }
+.accion-corner { background: #7a4fb5; }
+.accion-falta { background: #c47a1f; }
+.accion-amarilla { background: #d1a520; color: #241d02; }
+.accion-roja { background: #a4302a; }
+
+.directo-eventos {
+  margin-top: 16px;
+}
+
+.lista-eventos-directo {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.evento-directo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--color-superficie-alt);
+  font-size: 13.5px;
+}
+
+.evento-directo .minuto-evento {
+  font-weight: 800;
+  color: var(--color-primario);
+  min-width: 30px;
+}
+
+/* ===================== Competición ===================== */
+.tarjeta-competicion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cabecera-competicion {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cabecera-competicion h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.etiqueta-liga { background: #e4edfb; border-color: #b7cdf0; color: #2f5fa8; }
+.etiqueta-copa { background: #f7e8d0; border-color: #e8c485; color: #93611a; }
+.etiqueta-torneo { background: #e9e0f7; border-color: #cbb6ec; color: #63409e; }
+.etiqueta-amistoso { background: #e2f3e6; border-color: #b7ddc2; color: #2f7a45; }
+
+/* ===================== Banco de ejercicios (tarjetas) ===================== */
+.tarjeta-ejercicio {
+  gap: 4px;
+}
+
+.titulo-tarjeta-ejercicio {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-texto);
+  text-decoration: none;
+  text-align: left;
+  padding: 0;
+  background: none;
+}
+
+.titulo-tarjeta-ejercicio:hover {
+  color: var(--color-primario);
+  background: none;
+}
+
+.descripcion-tarjeta-ejercicio {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  margin: 2px 0 0;
+}
+
+.etiqueta-color-1 { background: #e4edfb; border-color: #b7cdf0; color: #2f5fa8; }
+.etiqueta-color-2 { background: #e9e0f7; border-color: #cbb6ec; color: #63409e; }
+.etiqueta-color-3 { background: #f7e8d0; border-color: #e8c485; color: #93611a; }
+.etiqueta-color-4 { background: #d9f0ec; border-color: #a9ddd2; color: #1f7a68; }
+.etiqueta-color-5 { background: #e2f3e6; border-color: #b7ddc2; color: #2f7a45; }
+.etiqueta-color-6 { background: #fbe3ea; border-color: #f0bdd0; color: #a13a63; }
+
+/* ===================== Barra de progreso de cuotas ===================== */
+.barra-cuota-envoltorio {
+  margin: 4px 0 20px;
+  max-width: 480px;
+}
+
+.barra-cuota-etiquetas {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--color-texto-tenue);
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+
+.barra-cuota {
+  height: 14px;
+  border-radius: 99px;
+  background: var(--color-peligro-suave);
+  overflow: hidden;
+}
+
+.barra-cuota-relleno {
+  height: 100%;
+  background: #2e8b45;
+  border-radius: 99px 0 0 99px;
+  transition: width 0.3s ease;
+}
+
+.barra-cuota-relleno.completo {
+  border-radius: 99px;
+}
+
+.barra-mini-envoltorio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 90px;
+}
+
+.barra-mini {
+  flex: 1;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--color-peligro-suave);
+  overflow: hidden;
+}
+
+.barra-mini-relleno {
+  height: 100%;
+  background: #2e8b45;
+  border-radius: 99px;
+}
+
+.barra-mini-porcentaje {
+  font-size: 11px;
+  color: var(--color-texto-tenue);
+  min-width: 30px;
+  text-align: right;
+}
+
+/* ===================== Avatares y badges de estado (reutilizables) ===================== */
+.avatar-circulo {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 15px;
+  background: var(--color-superficie-alt);
+  color: var(--color-texto-tenue);
+}
+
+.avatar-circulo-grande {
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  font-size: 22px;
+}
+
+.badge-estado {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 99px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-activo { background: #e2f3e6; color: #2f7a45; }
+.badge-inactivo { background: var(--color-superficie-alt); color: var(--color-texto-tenue); }
+
+.boton-ancho {
+  width: 100%;
+  text-align: center;
+}
+
+.boton-lesion-activa {
+  background: var(--color-peligro-suave);
+  color: var(--color-peligro);
+  border-color: var(--color-peligro);
+}
+
+/* ===================== Tarjetas de deportista ===================== */
+.tarjeta-persona {
+  gap: 10px;
+}
+
+.tarjeta-inactiva {
+  opacity: 0.6;
+}
+
+.cabecera-persona {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.datos-cabecera-persona {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.nombre-tarjeta-persona {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-texto);
+  text-decoration: none;
+  padding: 0;
+  background: none;
+  text-align: left;
+}
+
+.nombre-tarjeta-persona:hover {
+  color: var(--color-primario);
+  background: none;
+}
+
+/* ===================== Tarjetas de equipo ===================== */
+.tarjeta-equipo {
+  gap: 10px;
+}
+
+.cabecera-equipo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icono-equipo {
+  font-size: 28px;
+  line-height: 1;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-superficie-alt);
+  border-radius: 50%;
+}
+
+.icono-equipo-grande {
+  width: 64px;
+  min-width: 64px;
+  height: 64px;
+  font-size: 34px;
+}
+
+/* ===================== Metodología (tarjetas) ===================== */
+.tarjeta-metodologia {
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.icono-metodologia {
+  font-size: 26px;
+}
+
+/* ===================== Ficha con bloques (Deportistas, Equipos...) ===================== */
+.cabecera-ficha-persona {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bloque-ficha {
+  background: var(--color-superficie);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.bloque-ficha h2 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.bloque-ficha .tarjeta {
+  box-shadow: none;
+  padding: 0;
+  max-width: 560px;
+  margin: 0;
+}
+
+.bloque-ficha .tabla-scroll {
+  box-shadow: none;
+}
+
+/* ===================== Inicio (dashboard) ===================== */
+.tarjeta-inicio {
+  border-left: 4px solid var(--color-borde);
+  gap: 10px;
+}
+
+.tarjeta-inicio.acento-dorado { border-left-color: var(--color-primario); }
+.tarjeta-inicio.acento-rojo { border-left-color: var(--color-peligro); }
+.tarjeta-inicio.acento-azul { border-left-color: #2f6fb0; }
+.tarjeta-inicio.acento-verde { border-left-color: #2e8b45; }
+
+.cabecera-tarjeta-inicio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cabecera-tarjeta-inicio h3 {
+  flex: 1;
+}
+
+.icono-tarjeta-inicio {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.contador-tarjeta-inicio {
+  background: var(--color-superficie-alt);
+  color: var(--color-texto-tenue);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 2px 9px;
+  border-radius: 99px;
+}
+
+.lista-inicio {
+  gap: 10px;
+}
+
+.fila-inicio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fila-inicio-extra {
+  margin-left: auto;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.avatar-circulo-mini {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  font-size: 11px;
+}
+
+.resultado-badge {
+  display: inline-block;
+  min-width: 44px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 12.5px;
+  padding: 3px 8px;
+  border-radius: 8px;
+}
+
+.resultado-victoria { background: #e2f3e6; color: #2f7a45; }
+.resultado-derrota { background: var(--color-peligro-suave); color: var(--color-peligro); }
+.resultado-empate { background: var(--color-superficie-alt); color: var(--color-texto-tenue); }

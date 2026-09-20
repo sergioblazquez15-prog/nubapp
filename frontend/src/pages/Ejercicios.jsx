@@ -4,6 +4,7 @@
 // compañero es solo para dirección deportiva/administrador/coordinador.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { colorEtiqueta } from '../utils/colorEtiqueta';
 
 const NATURALEZAS = ['fisica', 'tecnica', 'tactica'];
 const TIPOLOGIAS_SUGERIDAS = [
@@ -113,33 +114,24 @@ export default function Ejercicios() {
       ) : ejercicios.length === 0 ? (
         <p className="nota">No hay ejercicios en el banco de este deporte con estos filtros.</p>
       ) : (
-        <div className="tabla-scroll">
-          <table className="tabla-usuarios">
-            <thead>
-              <tr>
-                <th>Título</th>
-                <th>Naturaleza</th>
-                <th>Tipología</th>
-                <th>Categoría edad</th>
-                <th>Duración</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {ejercicios.map((e) => (
-                <tr key={e.id}>
-                  <td>{e.titulo}</td>
-                  <td>{e.naturaleza || '—'}</td>
-                  <td>{e.tipologia || '—'}</td>
-                  <td>{e.categoriaEdad || '—'}</td>
-                  <td>{e.duracionMin ? `${e.duracionMin} min` : '—'}</td>
-                  <td>
-                    <button className="boton-lesion" onClick={() => setEjercicioAbiertoId(e.id)}>Ver / vídeos</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="tarjetas-dashboard">
+          {ejercicios.map((e) => (
+            <div key={e.id} className="tarjeta tarjeta-dashboard tarjeta-ejercicio">
+              <button className="boton-enlace titulo-tarjeta-ejercicio" onClick={() => setEjercicioAbiertoId(e.id)}>
+                {e.titulo}
+              </button>
+              <div className="etiquetas-roles" style={{ margin: '4px 0' }}>
+                {e.tipologia && <span className={`etiqueta-suave ${colorEtiqueta(e.tipologia)}`}>{e.tipologia}</span>}
+                {e.naturaleza && <span className={`etiqueta-suave ${colorEtiqueta(e.naturaleza)}`}>{e.naturaleza}</span>}
+                {e.categoriaEdad && <span className={`etiqueta-suave ${colorEtiqueta(e.categoriaEdad)}`}>{e.categoriaEdad}</span>}
+              </div>
+              {e.descripcion && <p className="nota descripcion-tarjeta-ejercicio">{e.descripcion}</p>}
+              <p className="nota" style={{ margin: '4px 0 0' }}>
+                {[e.espacio, e.numJugadores ? `${e.numJugadores} jugadores` : null, e.duracionMin ? `${e.duracionMin} min` : null]
+                  .filter(Boolean).join(' · ') || 'Sin más detalles'}
+              </p>
+            </div>
+          ))}
         </div>
       )}
     </div>
