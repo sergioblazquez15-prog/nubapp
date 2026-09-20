@@ -694,16 +694,24 @@ router.delete('/:id', autenticar, async (req, res) => {
 // alias de abajo una vez se pueda ver una respuesta real - el endpoint
 // devuelve siempre alguna pista (las claves del primer partido
 // encontrado) para poder afinarlo rápido.
+// NOTA: el 13/09/2026 se pudo por fin inspeccionar una respuesta real de
+// rffm.es (antes solo se podía adivinar el formato a ciegas). La RFFM usa
+// nombres de campo en snake_case y no coinciden con los que se habían
+// supuesto inicialmente (p.ej. "equipo_local" en vez de "equipoLocal", o
+// "goles_casa" en vez de "golesLocal") - por eso la importación no
+// encontraba ningún partido. Se añaden los alias reales vistos en la web
+// (ver también extraerPartidosDeCalendarRFFM más abajo, que ataca
+// directamente la forma conocida de props.pageProps.calendar.rounds).
 const ALIAS_FECHA = ['fecha', 'fechaPartido', 'fecha_partido', 'date', 'fechaHora', 'fechaInicio'];
 const ALIAS_HORA = ['hora', 'horaPartido', 'hora_partido', 'time', 'horaInicio'];
-const ALIAS_LOCAL = ['equipoLocal', 'nombreLocal', 'local', 'equipo1', 'homeTeam', 'home', 'nombreEquipoLocal'];
-const ALIAS_VISITANTE = ['equipoVisitante', 'nombreVisitante', 'visitante', 'equipo2', 'awayTeam', 'away', 'nombreEquipoVisitante'];
-const ALIAS_GOLES_LOCAL = ['golesLocal', 'resultadoLocal', 'golLocal', 'homeScore', 'puntosLocal', 'marcadorLocal'];
-const ALIAS_GOLES_VISITANTE = ['golesVisitante', 'resultadoVisitante', 'golVisitante', 'awayScore', 'puntosVisitante', 'marcadorVisitante'];
-const ALIAS_ESCUDO_LOCAL = ['escudoLocal', 'escudo1', 'logoLocal', 'homeCrest', 'imagenLocal', 'escudoEquipoLocal'];
-const ALIAS_ESCUDO_VISITANTE = ['escudoVisitante', 'escudo2', 'logoVisitante', 'awayCrest', 'imagenVisitante', 'escudoEquipoVisitante'];
+const ALIAS_LOCAL = ['equipo_local', 'equipoLocal', 'nombreLocal', 'local', 'equipo1', 'homeTeam', 'home', 'nombreEquipoLocal'];
+const ALIAS_VISITANTE = ['equipo_visitante', 'equipoVisitante', 'nombreVisitante', 'visitante', 'equipo2', 'awayTeam', 'away', 'nombreEquipoVisitante'];
+const ALIAS_GOLES_LOCAL = ['goles_casa', 'goles_local', 'golesLocal', 'resultadoLocal', 'golLocal', 'homeScore', 'puntosLocal', 'marcadorLocal'];
+const ALIAS_GOLES_VISITANTE = ['goles_visitante', 'golesVisitante', 'resultadoVisitante', 'golVisitante', 'awayScore', 'puntosVisitante', 'marcadorVisitante'];
+const ALIAS_ESCUDO_LOCAL = ['escudo_equipo_local', 'escudoLocal', 'escudo1', 'logoLocal', 'homeCrest', 'imagenLocal', 'escudoEquipoLocal'];
+const ALIAS_ESCUDO_VISITANTE = ['escudo_equipo_visitante', 'escudoVisitante', 'escudo2', 'logoVisitante', 'awayCrest', 'imagenVisitante', 'escudoEquipoVisitante'];
 const ALIAS_JORNADA = ['jornada', 'round', 'ronda', 'numeroJornada'];
-const ALIAS_ID = ['id', 'idPartido', 'partidoId', 'matchId', 'id_partido'];
+const ALIAS_ID = ['codacta', 'id', 'idPartido', 'partidoId', 'matchId', 'id_partido'];
 
 function normalizarTextoRival(txt) {
   return String(txt ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -729,8 +737,40 @@ function textoDeCampo(valor) {
 function urlDeCampo(valor) {
   const texto = textoDeCampo(valor);
   if (!texto) return null;
-  if (typeof valor === 'object' && (valor.url || valor.src)) return valor.url || valor.src;
-  return texto.startsWith('http') || texto.startsWith('/') ? texto : null;
+  const bruto = (typeof valor === 'object' && (valor.url || valor.src)) ? (valor.url || valor.src) : texto;
+  if (bruto.startsWith('http')) return bruto;
+  // La RFFM devuelve los escudos como ruta relativa a su propio dominio
+  // (p.ej. "/pnfg/pimg/Clubes/00100_..._escudo.jpg"): hay que anteponer el
+  // host o la imagen no cargará desde nuestra propia web.
+  if (bruto.startsWith('/')) return `https://www.rffm.es${bruto}`;
+  return null;
+}
+
+// Forma conocida (confirmada inspeccionando rffm.es en vivo, 13/09/2026)
+// del bloque __NEXT_DATA__ para una URL de calendario CON los parámetros
+// de temporada/tipojuego/competicion/grupo ya elegidos (la página, sin
+// esos parámetros, no trae ningún partido: hay que completar el filtro y
+// pulsar BUSCAR en rffm.es y copiar la URL resultante, que incluye
+// "?temporada=...&tipojuego=...&competicion=...&grupo=..."):
+//   props.pageProps.calendar = {
+//     rounds: [ { jornada: '1 (26-09-2026)', equipos: [ {...partido...} ] } ]
+//   }
+// Cada partido no trae su propia "jornada", así que se copia aquí desde
+// la ronda que lo contiene. Se ataca esta forma conocida primero, por ser
+// más fiable que la heurística genérica de buscarArrayDePartidos (que se
+// deja como respaldo por si la RFFM cambia de nuevo el formato).
+function extraerPartidosDeCalendarRFFM(datos) {
+  const rounds = datos?.props?.pageProps?.calendar?.rounds;
+  if (!Array.isArray(rounds)) return null;
+  const partidos = [];
+  for (const ronda of rounds) {
+    const equipos = Array.isArray(ronda?.equipos) ? ronda.equipos : [];
+    for (const p of equipos) {
+      if (!p || typeof p !== 'object') continue;
+      partidos.push(p.jornada !== undefined && p.jornada !== null && p.jornada !== '' ? p : { ...p, jornada: ronda?.jornada ?? null });
+    }
+  }
+  return partidos.length > 0 ? partidos : null;
 }
 
 function extraerNextData(html) {
@@ -866,11 +906,14 @@ router.post('/importar-calendario', autenticar, async (req, res) => {
           + 'Puede que la RFFM haya cambiado el formato de su web.',
       });
     }
-    const partidosEncontrados = buscarArrayDePartidos(datos);
+    const partidosEncontrados = extraerPartidosDeCalendarRFFM(datos) || buscarArrayDePartidos(datos);
     if (!partidosEncontrados || partidosEncontrados.length === 0) {
       return res.status(502).json({
         error: 'Se ha leído la página pero no se ha reconocido ningún partido dentro de sus datos. '
-          + 'El formato puede haber cambiado; habría que revisar el enlace real para ajustar la importación.',
+          + 'Asegúrate de que el enlace es el de la página de RFFM DESPUÉS de elegir la competición y el grupo '
+          + 'y pulsar "BUSCAR" (la URL debe llevar al final algo como "?temporada=...&tipojuego=...&competicion=...&grupo=..."); '
+          + 'el enlace genérico de "Calendario" sin esos parámetros no lleva partidos. '
+          + 'Si el enlace ya los lleva, puede que la RFFM haya cambiado el formato de su web.',
       });
     }
 
