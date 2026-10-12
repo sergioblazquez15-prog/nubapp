@@ -56,6 +56,7 @@
   display: flex; align-items: center; justify-content: center;
 }
 .da-cabecera-logo span { color: #121212; font-weight: 700; font-size: 13px; }
+.da-cabecera-escudo { width: 30px; height: 30px; object-fit: contain; display: block; }
 .da-cabecera-nombre-app { color: #F3EFE3; font-size: 15px; font-weight: 600; }
 .da-cabecera-usuario { display: flex; align-items: center; gap: 8px; }
 .da-cabecera-usuario-texto { text-align: right; }

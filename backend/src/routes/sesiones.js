@@ -124,6 +124,77 @@ router.get('/resumen-asistencia', autenticar, async (req, res) => {
   }
 });
 
+// GET /api/sesiones/confirmaciones?desde=&hasta= - para cada sesión de
+// cada equipo que el usuario puede gestionar (todos si es
+// administración/dirección deportiva, solo los suyos si es
+// coordinador/entrenador/monitor) en ese rango de fechas: la plantilla
+// entera dividida en quién ha confirmado, quién ha dicho que no y quién
+// sigue sin contestar. Es la base de la tarjeta "Confirmaciones de la
+// semana" en Inicio (ver también GET /partidos/confirmaciones, análogo
+// para partidos).
+router.get('/confirmaciones', autenticar, async (req, res) => {
+  const { desde, hasta } = req.query;
+  if (!desde || !hasta) return res.status(400).json({ error: 'desde y hasta son obligatorios' });
+  const { roles, id: usuarioId } = req.usuario;
+  const esTotal = roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r));
+  try {
+    const parametros = [desde, hasta];
+    let condicionEquipo = '';
+    if (!esTotal) {
+      parametros.push(usuarioId);
+      condicionEquipo = `AND EXISTS (SELECT 1 FROM equipo_personal ep WHERE ep.equipo_id = s.equipo_id AND ep.usuario_id = $${parametros.length})`;
+    }
+    const { rows: sesiones } = await pool.query(
+      `SELECT s.id, s.equipo_id, s.fecha, s.hora_inicio, s.titulo, s.solo_deportista_id,
+              e.nombre AS equipo_nombre, dep.nombre AS deporte_nombre
+       FROM sesiones s
+       JOIN equipos e ON e.id = s.equipo_id
+       JOIN deportes dep ON dep.id = e.deporte_id
+       WHERE s.fecha BETWEEN $1 AND $2 AND s.cancelada = FALSE ${condicionEquipo}
+       ORDER BY s.fecha, s.hora_inicio NULLS LAST`,
+      parametros
+    );
+    const resultado = [];
+    for (const s of sesiones) {
+      const { rows: plantilla } = s.solo_deportista_id
+        ? await pool.query(
+            `SELECT d.id AS deportista_id, d.nombre, d.apellidos, a.confirmacion_previa
+             FROM deportistas d
+             LEFT JOIN asistencia a ON a.sesion_id = $1 AND a.deportista_id = d.id
+             WHERE d.id = $2`,
+            [s.id, s.solo_deportista_id]
+          )
+        : await pool.query(
+            `SELECT d.id AS deportista_id, d.nombre, d.apellidos, a.confirmacion_previa
+             FROM deportista_equipo_temporada det
+             JOIN deportistas d ON d.id = det.deportista_id
+             LEFT JOIN asistencia a ON a.sesion_id = $1 AND a.deportista_id = d.id
+             WHERE det.equipo_id = $2
+             ORDER BY d.apellidos, d.nombre`,
+            [s.id, s.equipo_id]
+          );
+      const aNombre = (f) => ({ deportistaId: f.deportista_id, nombre: f.nombre, apellidos: f.apellidos });
+      resultado.push({
+        id: s.id,
+        tipo: 'sesion',
+        equipoId: s.equipo_id,
+        equipoNombre: s.equipo_nombre,
+        deporteNombre: s.deporte_nombre,
+        fecha: s.fecha,
+        horaInicio: s.hora_inicio,
+        titulo: s.titulo,
+        confirmados: plantilla.filter((f) => f.confirmacion_previa === 'confirmado').map(aNombre),
+        rechazados: plantilla.filter((f) => f.confirmacion_previa === 'rechazado').map(aNombre),
+        pendientes: plantilla.filter((f) => !f.confirmacion_previa || f.confirmacion_previa === 'pendiente').map(aNombre),
+      });
+    }
+    res.json(resultado);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al consultar las confirmaciones de sesiones' });
+  }
+});
+
 // POST /api/sesiones - crear sesión (fecha/hora/título), o una sesión de
 // recuperación individual si se manda esRecuperacion + soloDeportistaId
 // (opcionalmente enlazada a la sesión de grupo que se recupera, vía

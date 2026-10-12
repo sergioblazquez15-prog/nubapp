@@ -56,16 +56,11 @@ body {
 }
 
 .escudo-login {
-  font-size: 40px;
-  width: 76px;
-  height: 76px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-superficie-alt);
-  border: 2px solid var(--color-primario);
-  margin-bottom: 4px;
+  width: 92px;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto 4px;
 }
 
 .marca-login {

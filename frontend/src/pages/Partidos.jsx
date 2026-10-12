@@ -91,6 +91,15 @@ export default function Partidos() {
     cargarPartidos();
   }
 
+  // Edición completa de un partido (fecha, hora, rival, competición,
+  // resultado y notas del entrenador), sin pasar por el Directo — vale
+  // tanto para meter los datos directamente como para corregir un
+  // partido que ya se jugó con el Directo.
+  async function guardarEdicionPartido(partidoId, datos) {
+    await api.put(`/partidos/${partidoId}`, datos);
+    cargarPartidos();
+  }
+
   async function eliminarPartido(partidoId) {
     if (!confirm('¿Eliminar este partido?')) return;
     await api.delete(`/partidos/${partidoId}`);
@@ -194,6 +203,7 @@ export default function Partidos() {
               partido={p}
               puedeGestionar={puedeGestionar}
               onGuardarResultado={(propio, rival) => guardarResultado(p.id, propio, rival)}
+              onGuardarEdicion={(datos) => guardarEdicionPartido(p.id, datos)}
               onEliminar={() => eliminarPartido(p.id)}
             />
           ))}
@@ -203,8 +213,9 @@ export default function Partidos() {
   );
 }
 
-function FilaPartidoLista({ partido: p, puedeGestionar, onGuardarResultado, onEliminar }) {
+function FilaPartidoLista({ partido: p, puedeGestionar, onGuardarResultado, onGuardarEdicion, onEliminar }) {
   const [editando, setEditando] = useState(false);
+  const [editandoCompleto, setEditandoCompleto] = useState(false);
   const [propio, setPropio] = useState(p.resultadoPropio ?? '');
   const [rival, setRival] = useState(p.resultadoRival ?? '');
 
@@ -217,49 +228,146 @@ function FilaPartidoLista({ partido: p, puedeGestionar, onGuardarResultado, onEl
   const estado = p.enDirecto ? 'directo' : p.jugado ? 'finalizado' : 'programado';
 
   return (
-    <div className="fila-partido-lista">
-      {p.escudoRival ? (
-        <img src={p.escudoRival} alt="" className="escudo-mini-club" style={{ objectFit: 'cover' }} />
-      ) : (
-        <span className="escudo-mini-club">{inicialesRival(p.rival)}</span>
-      )}
-      <div className="info-fila-partido">
-        <div style={{ fontWeight: 600 }}>
-          {p.equipoNombre ? <span className="equipo-del-partido">{p.equipoNombre} · </span> : null}
-          vs {p.rival}
+    <>
+      <div className="fila-partido-lista">
+        {p.escudoRival ? (
+          <img src={p.escudoRival} alt="" className="escudo-mini-club" style={{ objectFit: 'cover' }} />
+        ) : (
+          <span className="escudo-mini-club">{inicialesRival(p.rival)}</span>
+        )}
+        <div className="info-fila-partido">
+          <div style={{ fontWeight: 600 }}>
+            {p.equipoNombre ? <span className="equipo-del-partido">{p.equipoNombre} · </span> : null}
+            vs {p.rival}
+          </div>
+          <div className="nota" style={{ marginTop: 2 }}>
+            {p.fecha?.slice(0, 10)}{p.hora ? ` · ${p.hora.slice(0, 5)}` : ''}
+            {(p.competicionNombre || p.competicion) ? ` — ${p.competicionNombre || p.competicion}` : ''}
+            {p.jornada ? ` · Jornada ${p.jornada}` : ''}
+          </div>
+          {p.notas && <div className="nota" style={{ marginTop: 2, fontStyle: 'italic' }}>📝 {p.notas}</div>}
         </div>
-        <div className="nota" style={{ marginTop: 2 }}>
-          {p.fecha?.slice(0, 10)}{p.hora ? ` · ${p.hora.slice(0, 5)}` : ''}
-          {(p.competicionNombre || p.competicion) ? ` — ${p.competicionNombre || p.competicion}` : ''}
-          {p.jornada ? ` · Jornada ${p.jornada}` : ''}
+        <span className={`badge-partido ${estado === 'directo' ? 'badge-directo-en-vivo' : estado === 'finalizado' ? 'badge-finalizado' : 'badge-programado'}`}>
+          {estado === 'directo' ? '● EN DIRECTO' : estado === 'finalizado' ? 'Finalizado' : 'Programado'}
+        </span>
+        {editando ? (
+          <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+            <input type="number" min="0" style={{ maxWidth: 56 }} value={propio} onChange={(e) => setPropio(e.target.value)} onBlur={guardar} />
+            -
+            <input type="number" min="0" style={{ maxWidth: 56 }} value={rival} onChange={(e) => setRival(e.target.value)} onBlur={guardar} />
+          </span>
+        ) : (
+          <span
+            className="resultado-fila-partido"
+            onClick={() => puedeGestionar && setEditando(true)}
+            style={{ cursor: puedeGestionar ? 'pointer' : 'default' }}
+            title={puedeGestionar ? 'Editar resultado' : ''}
+          >
+            {p.jugado || p.enDirecto ? `${p.resultadoPropio ?? 0} - ${p.resultadoRival ?? 0}` : '—'}
+          </span>
+        )}
+        <div className="acciones-fila">
+          <Link to={`/partidos/${p.id}/directo`} className="boton-ver-directo">
+            ▶ {estado === 'directo' ? 'Ver directo' : estado === 'finalizado' ? 'Resumen' : 'Directo'}
+          </Link>
+          {puedeGestionar && (
+            <button onClick={() => setEditandoCompleto((v) => !v)}>
+              {editandoCompleto ? 'Cerrar' : '✎ Editar datos'}
+            </button>
+          )}
+          {puedeGestionar && <button className="boton-peligro" onClick={onEliminar}>Eliminar</button>}
         </div>
       </div>
-      <span className={`badge-partido ${estado === 'directo' ? 'badge-directo-en-vivo' : estado === 'finalizado' ? 'badge-finalizado' : 'badge-programado'}`}>
-        {estado === 'directo' ? '● EN DIRECTO' : estado === 'finalizado' ? 'Finalizado' : 'Programado'}
-      </span>
-      {editando ? (
-        <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-          <input type="number" min="0" style={{ maxWidth: 56 }} value={propio} onChange={(e) => setPropio(e.target.value)} onBlur={guardar} />
+      {editandoCompleto && (
+        <FormularioEditarPartido
+          partido={p}
+          onGuardar={async (datos) => { await onGuardarEdicion(datos); setEditandoCompleto(false); }}
+          onCancelar={() => setEditandoCompleto(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// Edición completa de los datos de un partido — fecha, hora, rival,
+// local/visitante, competición, jornada, resultado y notas del
+// entrenador — sin pasar por el Directo. Sirve tanto para meter los datos
+// directamente (partido que no se ha jugado en directo) como para
+// corregir cualquier dato después de haber usado el Directo: el backend
+// (PUT /api/partidos/:id) no distingue el origen, siempre se puede editar.
+function FormularioEditarPartido({ partido: p, onGuardar, onCancelar }) {
+  const [fecha, setFecha] = useState(p.fecha?.slice(0, 10) || '');
+  const [hora, setHora] = useState(p.hora?.slice(0, 5) || '');
+  const [rival, setRival] = useState(p.rival || '');
+  const [localVisitante, setLocalVisitante] = useState(p.localVisitante || 'local');
+  const [competicion, setCompeticion] = useState(p.competicionNombre || p.competicion || '');
+  const [jornada, setJornada] = useState(p.jornada || '');
+  const [resultadoPropio, setResultadoPropio] = useState(p.resultadoPropio ?? '');
+  const [resultadoRival, setResultadoRival] = useState(p.resultadoRival ?? '');
+  const [notas, setNotas] = useState(p.notas || '');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState('');
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    setError('');
+    setEnviando(true);
+    try {
+      await onGuardar({
+        fecha: fecha || undefined,
+        hora: hora || null,
+        rival: rival || undefined,
+        localVisitante,
+        competicion: competicion || null,
+        jornada: jornada || null,
+        resultadoPropio: resultadoPropio !== '' ? Number(resultadoPropio) : null,
+        resultadoRival: resultadoRival !== '' ? Number(resultadoRival) : null,
+        notas: notas || null,
+      });
+    } catch (err) {
+      setError(err.message);
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 680, margin: '0 0 16px' }}>
+      <div className="barra-filtros">
+        <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
+        <input type="time" value={hora} onChange={(e) => setHora(e.target.value)} placeholder="Hora (opcional)" />
+        <input placeholder="Rival" value={rival} onChange={(e) => setRival(e.target.value)} required />
+        <select value={localVisitante} onChange={(e) => setLocalVisitante(e.target.value)}>
+          <option value="local">Local</option>
+          <option value="visitante">Visitante</option>
+        </select>
+      </div>
+      <div className="barra-filtros">
+        <input placeholder="Competición (opcional)" value={competicion} onChange={(e) => setCompeticion(e.target.value)} style={{ flex: 2 }} />
+        <input placeholder="Jornada (opcional)" value={jornada} onChange={(e) => setJornada(e.target.value)} style={{ maxWidth: 120 }} />
+      </div>
+      <label>
+        Resultado (déjalo en blanco si todavía no se ha jugado)
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+          <input type="number" min="0" style={{ maxWidth: 70 }} value={resultadoPropio} onChange={(e) => setResultadoPropio(e.target.value)} placeholder="Nosotros" />
           -
-          <input type="number" min="0" style={{ maxWidth: 56 }} value={rival} onChange={(e) => setRival(e.target.value)} onBlur={guardar} />
+          <input type="number" min="0" style={{ maxWidth: 70 }} value={resultadoRival} onChange={(e) => setResultadoRival(e.target.value)} placeholder="Rival" />
         </span>
-      ) : (
-        <span
-          className="resultado-fila-partido"
-          onClick={() => puedeGestionar && setEditando(true)}
-          style={{ cursor: puedeGestionar ? 'pointer' : 'default' }}
-          title={puedeGestionar ? 'Editar resultado' : ''}
-        >
-          {p.jugado || p.enDirecto ? `${p.resultadoPropio ?? 0} - ${p.resultadoRival ?? 0}` : '—'}
-        </span>
-      )}
+      </label>
+      <label>
+        Notas para el entrenador
+        <textarea
+          value={notas}
+          onChange={(e) => setNotas(e.target.value)}
+          rows={3}
+          placeholder="Observaciones sobre el partido, el rival, decisiones tácticas…"
+        />
+      </label>
+      {error && <p className="error">{error}</p>}
       <div className="acciones-fila">
-        <Link to={`/partidos/${p.id}/directo`} className="boton-ver-directo">
-          ▶ {estado === 'directo' ? 'Ver directo' : estado === 'finalizado' ? 'Resumen' : 'Directo'}
-        </Link>
-        {puedeGestionar && <button className="boton-peligro" onClick={onEliminar}>Eliminar</button>}
+        <button type="submit" disabled={enviando}>{enviando ? 'Guardando…' : 'Guardar cambios'}</button>
+        <button type="button" onClick={onCancelar} disabled={enviando}>Cancelar</button>
       </div>
-    </div>
+    </form>
   );
 }
 

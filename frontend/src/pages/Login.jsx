@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import escudoAdnb from '../assets/escudo-adnb.png';
 
 export default function Login() {
   const { iniciarSesion } = useAuth();
@@ -27,7 +28,7 @@ export default function Login() {
   return (
     <div className="pantalla-login">
       <form className="tarjeta tarjeta-login" onSubmit={manejarEnvio}>
-        <span className="escudo-login">🏅</span>
+        <img src={escudoAdnb} alt="Escudo AD Nuevo Baztán" className="escudo-login" />
         <h1 className="marca-login">NUBAPP</h1>
         <p className="subtitulo">AD Nuevo Baztán</p>
 

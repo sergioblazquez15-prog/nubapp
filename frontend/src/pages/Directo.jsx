@@ -158,6 +158,11 @@ function MarcadorDirecto({ partidoId, equipoId, puedeGestionar }) {
     setPartido(await api.put(`/partidos/${partidoId}/directo/siguiente-parte`, {}));
     setMostrarResumen(true);
   }
+  async function finalizarPartidoAhora() {
+    if (!confirm('¿Finalizar el partido ahora mismo? Se dará por terminado aunque queden partes configuradas sin jugar.')) return;
+    setPartido(await api.put(`/partidos/${partidoId}/directo/finalizar`, {}));
+    setMostrarResumen(true);
+  }
   async function anadirParteExtra() {
     const nombre = window.prompt('Nombre de la parte extra (ej: Prórroga 1)', 'Prórroga');
     if (!nombre) return;
@@ -254,6 +259,7 @@ function MarcadorDirecto({ partidoId, equipoId, puedeGestionar }) {
               )}
               <button type="button" className="boton-lesion" onClick={siguienteParte}>⏭ Siguiente parte</button>
               <button type="button" className="boton-lesion" onClick={anadirParteExtra}>+ Parte extra</button>
+              <button type="button" className="boton-peligro" onClick={finalizarPartidoAhora}>⏹ Finalizar partido ahora</button>
             </div>
 
             <div className="directo-posesion">

@@ -12,14 +12,40 @@ import { colorEtiqueta, iniciales } from '../utils/colorEtiqueta';
 
 const NOMBRES_DIA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
+function pad2(n) { return n < 10 ? `0${n}` : `${n}`; }
+function aISO(fecha) { return `${fecha.getFullYear()}-${pad2(fecha.getMonth() + 1)}-${pad2(fecha.getDate())}`; }
+function sumarDias(fecha, n) { const d = new Date(fecha); d.setDate(d.getDate() + n); return d; }
+function lunesDeSemana(fecha) {
+  const d = new Date(fecha);
+  const diaSemana = (d.getDay() + 6) % 7; // 0 = lunes
+  d.setDate(d.getDate() - diaSemana);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 export default function Inicio() {
   const { usuario, tieneRol } = useAuth();
   const [resumen, setResumen] = useState(null);
   const [error, setError] = useState('');
+  const [confirmaciones, setConfirmaciones] = useState(null);
   const veEjercicios = tieneRol('administrador', 'direccion_deportiva', 'coordinador', 'entrenador');
 
   useEffect(() => {
     api.get('/inicio/resumen').then(setResumen).catch((err) => setError(err.message));
+  }, []);
+
+  useEffect(() => {
+    const lunes = lunesDeSemana(new Date());
+    const domingo = sumarDias(lunes, 6);
+    const desde = aISO(lunes);
+    const hasta = aISO(domingo);
+    Promise.all([
+      api.get(`/sesiones/confirmaciones?desde=${desde}&hasta=${hasta}`).catch(() => []),
+      api.get(`/partidos/confirmaciones?desde=${desde}&hasta=${hasta}`).catch(() => []),
+    ]).then(([sesiones, partidos]) => {
+      const items = [...sesiones, ...partidos].sort((a, b) => `${a.fecha}${a.horaInicio || a.hora || ''}`.localeCompare(`${b.fecha}${b.horaInicio || b.hora || ''}`));
+      setConfirmaciones(items);
+    });
   }, []);
 
   return (
@@ -45,6 +71,7 @@ export default function Inicio() {
             <CalendarioMensual sesiones={resumen.sesionesDelMes} partidos={resumen.partidosDelMes || []} />
 
             <div className="columna-inicio">
+              <TarjetaConfirmacionesSemana items={confirmaciones} />
               <TarjetaCumpleanos items={resumen.cumpleanosSemana} />
               <TarjetaLesionados items={resumen.lesionados} />
               <TarjetaFaltas items={resumen.faltasSinJustificar} />
@@ -53,6 +80,64 @@ export default function Inicio() {
             </div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// Tarjeta "Confirmaciones de la semana": para cada sesión de entrenamiento
+// y cada partido de esta semana (lunes a domingo), cuántos han confirmado,
+// cuántos han dicho que no y cuántos siguen sin contestar — con el listado
+// de nombres de quién ha confirmado, que es lo que pidió Sergio para poder
+// ver de un vistazo quién va a venir. Administración/dirección deportiva
+// ven todos los equipos; coordinador/entrenador/monitor solo los suyos
+// (el backend ya filtra, ver GET /sesiones|partidos/confirmaciones).
+function TarjetaConfirmacionesSemana({ items }) {
+  const [abiertoId, setAbiertoId] = useState(null);
+
+  return (
+    <div className="tarjeta tarjeta-dashboard tarjeta-inicio acento-dorado">
+      <CabeceraTarjetaInicio icono="✅" titulo="Confirmaciones de la semana" total={(items || []).length} />
+      {items === null ? (
+        <p className="cargando">Cargando…</p>
+      ) : items.length === 0 ? (
+        <p className="nota">No hay sesiones ni partidos programados esta semana.</p>
+      ) : (
+        <ul className="lista-dashboard lista-inicio">
+          {items.map((it) => {
+            const clave = `${it.tipo}-${it.id}`;
+            const abierto = abiertoId === clave;
+            const titulo = it.tipo === 'partido'
+              ? `⚽ ${it.equipoNombre} vs ${it.rival}`
+              : `${it.equipoNombre}${it.titulo ? ` · ${it.titulo}` : ''}`;
+            const hora = (it.horaInicio || it.hora || '').slice(0, 5);
+            return (
+              <li key={clave} className="fila-inicio" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', cursor: 'pointer' }}
+                  onClick={() => setAbiertoId(abierto ? null : clave)}
+                >
+                  <span style={{ flex: 1 }}>
+                    {titulo}
+                    <span className="nota" style={{ marginLeft: 6 }}>
+                      {it.fecha.slice(8, 10)}/{it.fecha.slice(5, 7)}{hora ? ` · ${hora}` : ''}
+                    </span>
+                  </span>
+                  <span className="nota" title="Confirmados / pendientes / no asisten">
+                    ✅ {it.confirmados.length} · ⏳ {it.pendientes.length} · ❌ {it.rechazados.length}
+                  </span>
+                </div>
+                {abierto && (
+                  <div className="nota" style={{ paddingLeft: 4 }}>
+                    <div><strong>Confirmados:</strong> {it.confirmados.length === 0 ? '—' : it.confirmados.map((d) => `${d.nombre} ${d.apellidos}`).join(', ')}</div>
+                    <div><strong>No asisten:</strong> {it.rechazados.length === 0 ? '—' : it.rechazados.map((d) => `${d.nombre} ${d.apellidos}`).join(', ')}</div>
+                    <div><strong>Sin contestar:</strong> {it.pendientes.length === 0 ? '—' : it.pendientes.map((d) => `${d.nombre} ${d.apellidos}`).join(', ')}</div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

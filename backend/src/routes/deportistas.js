@@ -7,6 +7,7 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const ExcelJS = require('exceljs');
 const bcrypt = require('bcrypt');
 const pool = require('../config/db');
 const { autenticar } = require('../middleware/auth');
@@ -558,6 +559,296 @@ router.put('/:id/lesion', autenticar, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar la lesión' });
   }
+});
+
+// --- Importación masiva desde Excel (plantillas de equipo) -------------
+//
+// El club lleva las plantillas de cada equipo en un Excel (ver
+// "plantilla_deportistas_nubapp.xlsx", entregada aparte con el mismo
+// formato que se espera aquí). Una fila = un deportista en UN equipo; si
+// practica varios deportes, se repite con el mismo Nº de socio. Por Nº de
+// socio: si ya existe, ACTUALIZA la ficha; si no, la CREA. Opcionalmente
+// (columnas "Email acceso Mi app" + "Contraseña inicial") crea también su
+// login propio, igual que POST /:id/acceso — por eso solo administrador.
+const subidaExcelDeportistas = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+function normalizarTextoImport(txt) {
+  return String(txt ?? '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/\*/g, '').trim();
+}
+
+const ALIAS_COLUMNAS_IMPORT = {
+  numeroSocio: ['n socio', 'nº socio', 'numero socio', 'num socio'],
+  nombre: ['nombre'],
+  apellidos: ['apellidos', 'apellido'],
+  nombreDeportivo: ['nombre deportivo'],
+  fechaNacimiento: ['fecha nacimiento'],
+  dni: ['dni'],
+  email: ['email deportista'],
+  telefonoDeportista: ['telefono deportista'],
+  telefonoPadre: ['telefono padre'],
+  telefonoMadre: ['telefono madre'],
+  deporte: ['deporte'],
+  equipo: ['equipo / categoria', 'equipo/categoria', 'equipo categoria', 'equipo'],
+  tipoDeportista: ['tipo deportista'],
+  dorsal: ['dorsal'],
+  emailAcceso: ['email acceso mi app'],
+  passwordInicial: ['contrasena inicial'],
+};
+
+function detectarColumnasImport(filaCabecera) {
+  const mapa = {};
+  filaCabecera.eachCell((celda, colNumero) => {
+    const valor = normalizarTextoImport(celda.value);
+    for (const [campo, alias] of Object.entries(ALIAS_COLUMNAS_IMPORT)) {
+      if (alias.includes(valor)) mapa[campo] = colNumero;
+    }
+  });
+  return mapa;
+}
+
+// Extrae texto plano de una celda de ExcelJS (string, número, fecha,
+// fórmula o texto enriquecido) - igual que en routes/cuotas.js.
+function celdaTextoImport(valor) {
+  if (valor === null || valor === undefined) return '';
+  if (typeof valor === 'object') {
+    if (Array.isArray(valor.richText)) return valor.richText.map((t) => t.text).join('');
+    if (valor.text !== undefined) return String(valor.text);
+    if (valor.result !== undefined) return celdaTextoImport(valor.result);
+    if (valor instanceof Date) return valor.toISOString();
+  }
+  return String(valor).trim();
+}
+
+// Admite Date (Excel), "dd/mm/aaaa" o "aaaa-mm-dd". Devuelve null si no se
+// reconoce (a diferencia del helper de cuotas.js, aquí NO se rellena con
+// la fecha de hoy - una fecha de nacimiento mal escrita debe dar error).
+function parsearFechaNacimientoImport(valorCelda) {
+  if (!valorCelda) return null;
+  if (valorCelda instanceof Date) return valorCelda.toISOString().slice(0, 10);
+  const texto = celdaTextoImport(valorCelda);
+  const conBarras = texto.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (conBarras) {
+    const [, d, m, a] = conBarras;
+    return `${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  const iso = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  return null;
+}
+
+// POST /api/deportistas/importar - multipart: campo "archivo" (el Excel)
+// + temporadaId (a qué temporada se asignan los equipos de cada fila).
+router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDeportistas.single('archivo'), async (req, res) => {
+  const { temporadaId } = req.body;
+  if (!req.file) return res.status(400).json({ error: 'Falta el archivo Excel (campo "archivo")' });
+  if (!temporadaId) return res.status(400).json({ error: 'temporadaId es obligatorio' });
+
+  let libro;
+  try {
+    libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(req.file.buffer);
+  } catch (err) {
+    return res.status(400).json({ error: 'No se ha podido leer el archivo. ¿Es un Excel (.xlsx) válido?' });
+  }
+
+  const hoja = libro.worksheets.find((h) => normalizarTextoImport(h.name) === 'plantilla') || libro.worksheets[0];
+  if (!hoja) return res.status(400).json({ error: 'El Excel no tiene ninguna hoja de datos' });
+
+  let columnas = null;
+  let numeroFilaCabecera = 0;
+  for (let i = 1; i <= Math.min(hoja.rowCount, 10); i++) {
+    const mapa = detectarColumnasImport(hoja.getRow(i));
+    if (mapa.numeroSocio && mapa.nombre && mapa.apellidos) {
+      columnas = mapa;
+      numeroFilaCabecera = i;
+      break;
+    }
+  }
+  if (!columnas) {
+    return res.status(400).json({ error: 'No se han reconocido las columnas de la plantilla. Usa la plantilla oficial sin cambiar los nombres de las cabeceras.' });
+  }
+
+  const { rows: deportesDb } = await pool.query('SELECT id, nombre FROM deportes');
+  const { rows: equiposDb } = await pool.query('SELECT id, nombre, deporte_id FROM equipos WHERE temporada_id = $1', [temporadaId]);
+
+  const creados = [];
+  const actualizados = [];
+  const accesosCreados = [];
+  const errores = [];
+
+  for (let i = numeroFilaCabecera + 1; i <= hoja.rowCount; i++) {
+    const fila = hoja.getRow(i);
+    const valor = (campo) => (columnas[campo] ? celdaTextoImport(fila.getCell(columnas[campo]).value) : '');
+
+    const numeroSocio = valor('numeroSocio');
+    const nombre = valor('nombre');
+    const apellidos = valor('apellidos');
+    if (!numeroSocio && !nombre && !apellidos) continue; // fila en blanco
+
+    const etiquetaFila = `Fila ${i}${nombre || apellidos ? ` (${[nombre, apellidos].filter(Boolean).join(' ')})` : ''}`;
+    try {
+      if (!numeroSocio || !nombre || !apellidos) {
+        errores.push(`${etiquetaFila}: faltan datos obligatorios (Nº socio, nombre o apellidos)`);
+        continue;
+      }
+      const fechaNacimiento = parsearFechaNacimientoImport(columnas.fechaNacimiento ? fila.getCell(columnas.fechaNacimiento).value : null);
+      if (!fechaNacimiento) {
+        errores.push(`${etiquetaFila}: fecha de nacimiento obligatoria y no reconocida (usa dd/mm/aaaa)`);
+        continue;
+      }
+      const nombreDeporte = valor('deporte');
+      const nombreEquipo = valor('equipo');
+      if (!nombreDeporte || !nombreEquipo) {
+        errores.push(`${etiquetaFila}: faltan "Deporte" o "Equipo / Categoría"`);
+        continue;
+      }
+      const deporte = deportesDb.find((d) => normalizarTextoImport(d.nombre) === normalizarTextoImport(nombreDeporte));
+      if (!deporte) {
+        errores.push(`${etiquetaFila}: no se reconoce el deporte "${nombreDeporte}" (revisa la hoja "Deportes y equipos")`);
+        continue;
+      }
+      const equipo = equiposDb.find((e) => e.deporte_id === deporte.id && normalizarTextoImport(e.nombre) === normalizarTextoImport(nombreEquipo));
+      if (!equipo) {
+        errores.push(`${etiquetaFila}: no se reconoce el equipo "${nombreEquipo}" en ${nombreDeporte} para esta temporada`);
+        continue;
+      }
+
+      const nombreDeportivo = valor('nombreDeportivo') || null;
+      const dni = valor('dni') || null;
+      const email = valor('email') || null;
+      const telefonoDeportista = valor('telefonoDeportista') || null;
+      const telefonoPadre = valor('telefonoPadre') || null;
+      const telefonoMadre = valor('telefonoMadre') || null;
+      const tipoDeportista = valor('tipoDeportista') || null;
+      const dorsalTexto = valor('dorsal');
+      const dorsal = dorsalTexto !== '' && !Number.isNaN(Number(dorsalTexto)) ? Number(dorsalTexto) : null;
+      const emailAcceso = valor('emailAcceso');
+      const passwordInicial = valor('passwordInicial');
+
+      let deportistaId;
+      let esNuevo = false;
+      const cliente = await pool.connect();
+      try {
+        await cliente.query('BEGIN');
+        const { rows: existente } = await cliente.query(
+          'SELECT id, usuario_id FROM deportistas WHERE numero_socio = $1 FOR UPDATE',
+          [numeroSocio]
+        );
+        if (existente[0]) {
+          deportistaId = existente[0].id;
+          await cliente.query(
+            `UPDATE deportistas SET
+               nombre = $1, apellidos = $2, fecha_nacimiento = $3,
+               nombre_deportivo = COALESCE($4, nombre_deportivo),
+               dni = COALESCE($5, dni), email = COALESCE($6, email),
+               telefono_deportista = COALESCE($7, telefono_deportista),
+               telefono_padre = COALESCE($8, telefono_padre),
+               telefono_madre = COALESCE($9, telefono_madre)
+             WHERE id = $10`,
+            [nombre, apellidos, fechaNacimiento, nombreDeportivo, dni, email, telefonoDeportista, telefonoPadre, telefonoMadre, deportistaId]
+          );
+        } else {
+          esNuevo = true;
+          const { rows: nuevo } = await cliente.query(
+            `INSERT INTO deportistas
+               (numero_socio, nombre, apellidos, fecha_nacimiento, nombre_deportivo, dni, email,
+                telefono_deportista, telefono_padre, telefono_madre)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+            [numeroSocio, nombre, apellidos, fechaNacimiento, nombreDeportivo, dni, email, telefonoDeportista, telefonoPadre, telefonoMadre]
+          );
+          deportistaId = nuevo[0].id;
+        }
+
+        const { rows: periodoAbierto } = await cliente.query(
+          'SELECT id FROM deportista_deportes WHERE deportista_id = $1 AND deporte_id = $2 AND fecha_baja IS NULL',
+          [deportistaId, deporte.id]
+        );
+        if (periodoAbierto[0]) {
+          if (tipoDeportista) {
+            await cliente.query('UPDATE deportista_deportes SET tipo_deportista = $1 WHERE id = $2', [tipoDeportista, periodoAbierto[0].id]);
+          }
+        } else {
+          await cliente.query(
+            'INSERT INTO deportista_deportes (deportista_id, deporte_id, tipo_deportista) VALUES ($1, $2, $3)',
+            [deportistaId, deporte.id, tipoDeportista]
+          );
+        }
+
+        await cliente.query(
+          `INSERT INTO deportista_equipo_temporada (deportista_id, equipo_id, temporada_id, dorsal)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (deportista_id, equipo_id, temporada_id)
+           DO UPDATE SET dorsal = COALESCE(EXCLUDED.dorsal, deportista_equipo_temporada.dorsal)`,
+          [deportistaId, equipo.id, temporadaId, dorsal]
+        );
+
+        await cliente.query('COMMIT');
+      } catch (err) {
+        await cliente.query('ROLLBACK');
+        throw err;
+      } finally {
+        cliente.release();
+      }
+
+      if (esNuevo) creados.push(`${nombre} ${apellidos} (Nº ${numeroSocio})`);
+      else actualizados.push(`${nombre} ${apellidos} (Nº ${numeroSocio})`);
+
+      // Acceso opcional a "Mi app" - solo si se ha rellenado el email Y
+      // el deportista no tenía ya uno (igual que POST /:id/acceso, no se
+      // sobrescribe sin más un acceso existente).
+      if (emailAcceso) {
+        const { rows: actual } = await pool.query('SELECT usuario_id FROM deportistas WHERE id = $1', [deportistaId]);
+        if (actual[0]?.usuario_id) {
+          errores.push(`${etiquetaFila}: ya tenía acceso propio a Mi app, no se ha tocado (cámbialo desde su ficha si hace falta)`);
+        } else if (!passwordInicial || passwordInicial.length < 8) {
+          errores.push(`${etiquetaFila}: para crear el acceso a Mi app falta "Contraseña inicial" (mínimo 8 caracteres)`);
+        } else {
+          const clienteAcceso = await pool.connect();
+          try {
+            await clienteAcceso.query('BEGIN');
+            const passwordHash = await bcrypt.hash(passwordInicial, RONDAS_BCRYPT);
+            const emailFinal = emailAcceso.toLowerCase().trim();
+            const { rows: nuevoUsuario } = await clienteAcceso.query(
+              'INSERT INTO usuarios (email, password_hash, nombre_completo) VALUES ($1, $2, $3) RETURNING id',
+              [emailFinal, passwordHash, `${nombre} ${apellidos}`]
+            );
+            const usuarioId = nuevoUsuario[0].id;
+            const { rows: rolDeportista } = await clienteAcceso.query(`SELECT id FROM roles WHERE nombre = 'deportista'`);
+            await clienteAcceso.query('INSERT INTO usuario_roles (usuario_id, rol_id) VALUES ($1, $2)', [usuarioId, rolDeportista[0].id]);
+            await clienteAcceso.query('UPDATE deportistas SET usuario_id = $1 WHERE id = $2', [usuarioId, deportistaId]);
+            await clienteAcceso.query('COMMIT');
+            accesosCreados.push(`${nombre} ${apellidos} (${emailFinal})`);
+          } catch (err) {
+            await clienteAcceso.query('ROLLBACK');
+            if (err.code === '23505') errores.push(`${etiquetaFila}: ya existe un usuario con el email "${emailAcceso}"`);
+            else { console.error(err); errores.push(`${etiquetaFila}: error inesperado al crear el acceso a Mi app`); }
+          } finally {
+            clienteAcceso.release();
+          }
+        }
+      }
+    } catch (err) {
+      if (err.code === '23505') {
+        errores.push(`${etiquetaFila}: ya existe otro deportista con ese número de socio`);
+      } else {
+        console.error(err);
+        errores.push(`${etiquetaFila}: error inesperado al procesar la fila`);
+      }
+    }
+  }
+
+  res.json({
+    ok: true,
+    creados: creados.length,
+    actualizados: actualizados.length,
+    accesosCreados: accesosCreados.length,
+    detalleCreados: creados,
+    detalleActualizados: actualizados,
+    detalleAccesos: accesosCreados,
+    errores,
+  });
 });
 
 // --- Acceso propio a la app (login del deportista) ---------------------

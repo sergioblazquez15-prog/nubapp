@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import escudoAdnb from '../assets/escudo-adnb.png';
 import '../styles/deportista.css';
 
 const NOMBRES_MES = [
@@ -124,26 +125,33 @@ export default function DeportistaApp() {
   }, [deportistaId]);
 
   // ---- confirmación previa (Asisto / No asisto) ----
+  // Generalizado para servir tanto a sesiones de entrenamiento como a
+  // partidos: cada "item" lleva { tipo: 'sesion'|'partido', id, ... } y se
+  // identifica de forma única con la clave `${tipo}-${id}`, para poder
+  // compartir un único bloque de pendientes/guardando entre ambos tipos.
 
-  function estadoDeSesion(sesion) {
-    return pendientes[sesion.id] || {
-      estado: sesion.confirmacionPrevia || 'pendiente',
-      motivo: sesion.motivo || null,
-      motivoTexto: sesion.motivoTexto || '',
+  function claveItem(item) { return `${item.tipo}-${item.id}`; }
+
+  function estadoDeItem(item) {
+    return pendientes[claveItem(item)] || {
+      estado: item.confirmacionPrevia || 'pendiente',
+      motivo: item.motivo || null,
+      motivoTexto: item.motivoTexto || '',
     };
   }
 
-  function actualizarPendiente(sesion, cambios) {
+  function actualizarPendiente(item, cambios) {
     setPendientes((actual) => ({
       ...actual,
-      [sesion.id]: { ...estadoDeSesion(sesion), ...cambios },
+      [claveItem(item)]: { ...estadoDeItem(item), ...cambios },
     }));
   }
 
-  async function enviarConfirmacion(sesion, estado, motivo, motivoTexto) {
-    setGuardandoId(sesion.id);
+  async function enviarConfirmacion(item, estado, motivo, motivoTexto) {
+    setGuardandoId(claveItem(item));
     try {
-      await api.put(`/sesiones/${sesion.id}/mi-confirmacion`, { estado, motivo, motivoTexto });
+      const ruta = item.tipo === 'partido' ? 'partidos' : 'sesiones';
+      await api.put(`/${ruta}/${item.id}/mi-confirmacion`, { estado, motivo, motivoTexto });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -151,32 +159,33 @@ export default function DeportistaApp() {
     }
   }
 
-  function marcarAsisto(sesion) {
-    actualizarPendiente(sesion, { estado: 'confirmado', motivo: null, motivoTexto: '' });
-    enviarConfirmacion(sesion, 'confirmado', null, '');
+  function marcarAsisto(item) {
+    actualizarPendiente(item, { estado: 'confirmado', motivo: null, motivoTexto: '' });
+    enviarConfirmacion(item, 'confirmado', null, '');
   }
 
-  function marcarNoAsisto(sesion) {
-    const actual = estadoDeSesion(sesion);
-    actualizarPendiente(sesion, { estado: 'rechazado' });
+  function marcarNoAsisto(item) {
+    const actual = estadoDeItem(item);
+    actualizarPendiente(item, { estado: 'rechazado' });
     // El backend exige un motivo para poder guardar "rechazado": si ya
     // había uno elegido se reenvía tal cual; si no, se espera a que elija
     // uno de los chips (que llaman a elegirMotivo, más abajo).
-    if (actual.motivo) enviarConfirmacion(sesion, 'rechazado', actual.motivo, actual.motivoTexto);
+    if (actual.motivo) enviarConfirmacion(item, 'rechazado', actual.motivo, actual.motivoTexto);
   }
 
-  function elegirMotivo(sesion, motivo) {
-    const actual = estadoDeSesion(sesion);
+  function elegirMotivo(item, motivo) {
+    const actual = estadoDeItem(item);
     const texto = motivo === 'otro' ? actual.motivoTexto : '';
-    actualizarPendiente(sesion, { motivo, motivoTexto: texto });
-    enviarConfirmacion(sesion, 'rechazado', motivo, texto);
+    actualizarPendiente(item, { motivo, motivoTexto: texto });
+    enviarConfirmacion(item, 'rechazado', motivo, texto);
   }
 
-  function escribirMotivoTexto(sesion, texto) {
-    actualizarPendiente(sesion, { motivoTexto: texto });
-    clearTimeout(temporizadoresTexto.current[sesion.id]);
-    temporizadoresTexto.current[sesion.id] = setTimeout(() => {
-      enviarConfirmacion(sesion, 'rechazado', 'otro', texto);
+  function escribirMotivoTexto(item, texto) {
+    actualizarPendiente(item, { motivoTexto: texto });
+    const clave = claveItem(item);
+    clearTimeout(temporizadoresTexto.current[clave]);
+    temporizadoresTexto.current[clave] = setTimeout(() => {
+      enviarConfirmacion(item, 'rechazado', 'otro', texto);
     }, 600);
   }
 
@@ -217,8 +226,17 @@ export default function DeportistaApp() {
   }
 
   const sesionesActivas = sesiones.filter((s) => !s.cancelada);
-  const sesionesEstaSemana = ordenar(sesionesActivas.filter((s) => enRango(s, lunesEstaSemana, finEstaSemana)));
-  const sesionesProximaSemana = ordenar(sesionesActivas.filter((s) => enRango(s, lunesProximaSemana, finProximaSemana)));
+  // Para "Confirma tu asistencia" se juntan sesiones de entrenamiento y
+  // partidos en una sola lista de "items" confirmables (cada uno con su
+  // propio tipo: 'sesion' o 'partido'), ya que el deportista debe poder
+  // confirmar ambos desde el mismo sitio, con el mismo toggle Asisto/No
+  // asisto. Los partidos ya jugados no se piden confirmar.
+  const itemsConfirmables = [
+    ...sesionesActivas.map((s) => ({ ...s, tipo: 'sesion' })),
+    ...partidos.filter((p) => !p.jugado).map((p) => ({ ...p, tipo: 'partido' })),
+  ];
+  const sesionesEstaSemana = ordenar(itemsConfirmables.filter((s) => enRango(s, lunesEstaSemana, finEstaSemana)));
+  const sesionesProximaSemana = ordenar(itemsConfirmables.filter((s) => enRango(s, lunesProximaSemana, finProximaSemana)));
 
   const totalPendienteCuotas = cuotas.reduce((acc, c) => acc + (c.pendiente || 0), 0);
   const alDiaEnCuotas = totalPendienteCuotas <= 0.009;
@@ -267,14 +285,21 @@ export default function DeportistaApp() {
 
   // ---- sub-componentes de cada pestaña ----
 
-  function TarjetaSesion({ sesion }) {
-    const st = estadoDeSesion(sesion);
+  // Sirve tanto para una sesión de entrenamiento como para un partido
+  // (item.tipo distingue cuál es) — mismo toggle Asisto/No asisto para
+  // los dos, solo cambia cómo se construye el título de la tarjeta.
+  function TarjetaSesion({ sesion: item }) {
+    const st = estadoDeItem(item);
     const mostrarMotivo = st.estado === 'rechazado';
-    const guardando = guardandoId === sesion.id;
-    const fecha = fechaLocalDesdeISO(sesion.fecha);
-    const titulo = sesion.esRecuperacion
-      ? `${sesion.deporteNombre} · Recuperación`
-      : (sesion.equipoNombre && sesion.equipoNombre !== sesion.deporteNombre ? `${sesion.deporteNombre} · ${sesion.equipoNombre}` : sesion.deporteNombre);
+    const guardando = guardandoId === claveItem(item);
+    const fecha = fechaLocalDesdeISO(item.fecha);
+    const esPartido = item.tipo === 'partido';
+    const titulo = esPartido
+      ? `⚽ ${item.equipoNombre ? `${item.equipoNombre} · ` : ''}vs ${item.rival}`
+      : (item.esRecuperacion
+          ? `${item.deporteNombre} · Recuperación`
+          : (item.equipoNombre && item.equipoNombre !== item.deporteNombre ? `${item.deporteNombre} · ${item.equipoNombre}` : item.deporteNombre));
+    const hora = esPartido ? item.hora : item.horaInicio;
 
     return (
       <div className="da-tarjeta-sesion">
@@ -287,7 +312,7 @@ export default function DeportistaApp() {
             <div className="da-deporte">{titulo || 'Sesión'}</div>
             <div className="da-detalle">
               {capitalizar(DIAS_LARGOS[(fecha.getDay() + 6) % 7])}
-              {sesion.horaInicio ? ` · ${sesion.horaInicio.slice(0, 5)}` : ''}
+              {hora ? ` · ${hora.slice(0, 5)}` : ''}
             </div>
           </div>
         </div>
@@ -295,7 +320,7 @@ export default function DeportistaApp() {
           <button
             type="button"
             className={`da-boton-estado ${st.estado === 'confirmado' ? 'da-activo-asisto' : ''}`}
-            onClick={() => marcarAsisto(sesion)}
+            onClick={() => marcarAsisto(item)}
             disabled={guardando}
           >
             Asisto
@@ -303,7 +328,7 @@ export default function DeportistaApp() {
           <button
             type="button"
             className={`da-boton-estado da-boton-no-asisto ${st.estado === 'rechazado' ? 'da-activo-no' : ''}`}
-            onClick={() => marcarNoAsisto(sesion)}
+            onClick={() => marcarNoAsisto(item)}
             disabled={guardando}
           >
             No asisto
@@ -318,7 +343,7 @@ export default function DeportistaApp() {
                   key={m.valor}
                   type="button"
                   className={`da-chip-motivo ${st.motivo === m.valor ? 'da-activo' : ''}`}
-                  onClick={() => elegirMotivo(sesion, m.valor)}
+                  onClick={() => elegirMotivo(item, m.valor)}
                   disabled={guardando}
                 >
                   {m.etiqueta}
@@ -331,7 +356,7 @@ export default function DeportistaApp() {
                 className="da-input-otro-motivo"
                 placeholder="Cuéntanos el motivo…"
                 value={st.motivoTexto}
-                onChange={(e) => escribirMotivoTexto(sesion, e.target.value)}
+                onChange={(e) => escribirMotivoTexto(item, e.target.value)}
               />
             )}
           </div>
@@ -348,13 +373,13 @@ export default function DeportistaApp() {
 
         <div className="da-grupo-titulo">Confirma tu asistencia · esta semana</div>
         {sesionesEstaSemana.length === 0
-          ? <p className="da-vacio">No tienes sesiones esta semana.</p>
-          : sesionesEstaSemana.map((s) => <TarjetaSesion key={s.id} sesion={s} />)}
+          ? <p className="da-vacio">No tienes sesiones ni partidos esta semana.</p>
+          : sesionesEstaSemana.map((s) => <TarjetaSesion key={claveItem(s)} sesion={s} />)}
 
         <div className="da-grupo-titulo">Confirma tu asistencia · próxima semana</div>
         {sesionesProximaSemana.length === 0
-          ? <p className="da-vacio">Todavía no hay sesiones programadas la semana que viene.</p>
-          : sesionesProximaSemana.map((s) => <TarjetaSesion key={s.id} sesion={s} />)}
+          ? <p className="da-vacio">Todavía no hay sesiones ni partidos programados la semana que viene.</p>
+          : sesionesProximaSemana.map((s) => <TarjetaSesion key={claveItem(s)} sesion={s} />)}
 
         <div className="da-grupo-titulo">Tus cuotas</div>
         <div className="da-tarjeta">
@@ -577,7 +602,7 @@ export default function DeportistaApp() {
     <div className="da-raiz">
       <div className="da-cabecera">
         <div className="da-cabecera-marca">
-          <div className="da-cabecera-logo"><span>N</span></div>
+          <img src={escudoAdnb} alt="Escudo AD Nuevo Baztán" className="da-cabecera-escudo" />
           <span className="da-titular da-cabecera-nombre-app">NUBAPP</span>
         </div>
         <div className="da-cabecera-usuario">

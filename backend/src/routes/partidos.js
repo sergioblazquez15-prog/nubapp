@@ -172,15 +172,29 @@ router.get('/', autenticar, async (req, res) => {
       parametros.push(temporadaId);
       condiciones.push(`p.temporada_id = $${parametros.length}`);
     }
+    // Para que "Mi app" pueda mostrar/confirmar también los partidos, se
+    // añade (si el usuario es un deportista con login propio) su propia
+    // confirmación previa a cada partido en la misma consulta.
+    parametros.push(req.usuario.deportistaId || null);
+    const marcadorDeportista = parametros.length;
     try {
       const { rows } = await pool.query(
-        `SELECT p.*, c.nombre AS competicion_nombre, e.nombre AS equipo_nombre FROM partidos p
+        `SELECT p.*, c.nombre AS competicion_nombre, e.nombre AS equipo_nombre,
+                pc.confirmacion_previa, pc.motivo, pc.motivo_texto
+         FROM partidos p
          LEFT JOIN competiciones c ON c.id = p.competicion_id
          JOIN equipos e ON e.id = p.equipo_id
+         LEFT JOIN partidos_confirmacion pc ON pc.partido_id = p.id AND pc.deportista_id = $${marcadorDeportista}
          WHERE ${condiciones.join(' AND ')} ORDER BY p.fecha DESC, p.hora DESC NULLS LAST`,
         parametros
       );
-      res.json(rows.map((f) => ({ ...filaAPartido(f), equipoNombre: f.equipo_nombre })));
+      res.json(rows.map((f) => ({
+        ...filaAPartido(f),
+        equipoNombre: f.equipo_nombre,
+        confirmacionPrevia: f.confirmacion_previa || 'pendiente',
+        motivo: f.motivo,
+        motivoTexto: f.motivo_texto,
+      })));
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Error al consultar los partidos' });
@@ -243,6 +257,64 @@ router.get('/estadisticas', autenticar, async (req, res) => {
   }
 });
 
+// GET /api/partidos/confirmaciones?desde=&hasta= - para cada partido de
+// cada equipo que el usuario puede gestionar (todos si es
+// administración/dirección deportiva, solo los suyos si es
+// coordinador/entrenador/monitor) en ese rango de fechas: la plantilla
+// entera dividida en quién ha confirmado, quién ha dicho que no y quién
+// sigue sin contestar. Es la base de la tarjeta "Confirmaciones de la
+// semana" en Inicio — mismo criterio que GET /sesiones/confirmaciones.
+router.get('/confirmaciones', autenticar, async (req, res) => {
+  const { desde, hasta } = req.query;
+  if (!desde || !hasta) return res.status(400).json({ error: 'desde y hasta son obligatorios' });
+  const { roles, id: usuarioId } = req.usuario;
+  const esTotal = roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r));
+  try {
+    const parametros = [desde, hasta];
+    let condicionEquipo = '';
+    if (!esTotal) {
+      parametros.push(usuarioId);
+      condicionEquipo = `AND EXISTS (SELECT 1 FROM equipo_personal ep WHERE ep.equipo_id = p.equipo_id AND ep.usuario_id = $${parametros.length})`;
+    }
+    const { rows: partidos } = await pool.query(
+      `SELECT p.id, p.equipo_id, p.fecha, p.hora, p.rival, e.nombre AS equipo_nombre
+       FROM partidos p JOIN equipos e ON e.id = p.equipo_id
+       WHERE p.fecha BETWEEN $1 AND $2 ${condicionEquipo}
+       ORDER BY p.fecha, p.hora NULLS LAST`,
+      parametros
+    );
+    const resultado = [];
+    for (const p of partidos) {
+      const { rows: plantilla } = await pool.query(
+        `SELECT d.id AS deportista_id, d.nombre, d.apellidos, pc.confirmacion_previa
+         FROM deportista_equipo_temporada det
+         JOIN deportistas d ON d.id = det.deportista_id
+         LEFT JOIN partidos_confirmacion pc ON pc.partido_id = $1 AND pc.deportista_id = d.id
+         WHERE det.equipo_id = $2
+         ORDER BY d.apellidos, d.nombre`,
+        [p.id, p.equipo_id]
+      );
+      const aNombre = (f) => ({ deportistaId: f.deportista_id, nombre: f.nombre, apellidos: f.apellidos });
+      resultado.push({
+        id: p.id,
+        tipo: 'partido',
+        equipoId: p.equipo_id,
+        equipoNombre: p.equipo_nombre,
+        fecha: p.fecha,
+        hora: p.hora,
+        rival: p.rival,
+        confirmados: plantilla.filter((f) => f.confirmacion_previa === 'confirmado').map(aNombre),
+        rechazados: plantilla.filter((f) => f.confirmacion_previa === 'rechazado').map(aNombre),
+        pendientes: plantilla.filter((f) => !f.confirmacion_previa || f.confirmacion_previa === 'pendiente').map(aNombre),
+      });
+    }
+    res.json(resultado);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al consultar las confirmaciones de partidos' });
+  }
+});
+
 // GET /api/partidos/:id - detalle de un partido concreto (para el
 // marcador en directo).
 router.get('/:id', autenticar, async (req, res) => {
@@ -256,6 +328,54 @@ router.get('/:id', autenticar, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al consultar el partido' });
+  }
+});
+
+// --- Confirmación previa de asistencia (el propio deportista) ----------
+
+// PUT /api/partidos/:id/mi-confirmacion - el propio deportista confirma o
+// rechaza su asistencia a UN partido (antes de que se juegue), con motivo
+// si rechaza. Mismo patrón exacto que PUT /sesiones/:id/mi-confirmacion:
+// el deportista_id se saca SIEMPRE de su propio login (req.usuario), nunca
+// de un parámetro manipulable. Esto nunca toca la convocatoria real
+// (partidos_alineacion), que decide el entrenador aparte.
+const MOTIVOS_VALIDOS_CONFIRMACION = ['enfermo', 'lesion', 'trabajo', 'otro'];
+router.put('/:id/mi-confirmacion', autenticar, async (req, res) => {
+  const { estado, motivo, motivoTexto } = req.body;
+  const deportistaId = req.usuario.deportistaId;
+  if (!deportistaId) {
+    return res.status(403).json({ error: 'Tu usuario no tiene una ficha de deportista enlazada' });
+  }
+  if (!['pendiente', 'confirmado', 'rechazado'].includes(estado)) {
+    return res.status(400).json({ error: "estado debe ser 'pendiente', 'confirmado' o 'rechazado'" });
+  }
+  if (estado === 'rechazado' && !MOTIVOS_VALIDOS_CONFIRMACION.includes(motivo)) {
+    return res.status(400).json({ error: `Si no vas a jugar, el motivo debe ser una de: ${MOTIVOS_VALIDOS_CONFIRMACION.join(', ')}` });
+  }
+  try {
+    const { rows: partido } = await pool.query('SELECT * FROM partidos WHERE id = $1', [req.params.id]);
+    if (!partido[0]) return res.status(404).json({ error: 'Partido no encontrado' });
+
+    const esMio = await deportistaEsDelEquipo(deportistaId, partido[0].equipo_id);
+    if (!esMio) return res.status(403).json({ error: 'No tienes permiso para esto' });
+
+    const motivoFinal = estado === 'rechazado' ? motivo : null;
+    const motivoTextoFinal = estado === 'rechazado' && motivo === 'otro' ? ((motivoTexto || '').trim() || null) : null;
+
+    await pool.query(
+      `INSERT INTO partidos_confirmacion (partido_id, deportista_id, confirmacion_previa, motivo, motivo_texto)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (partido_id, deportista_id) DO UPDATE SET
+         confirmacion_previa = EXCLUDED.confirmacion_previa,
+         motivo = EXCLUDED.motivo,
+         motivo_texto = EXCLUDED.motivo_texto,
+         actualizado_en = now()`,
+      [req.params.id, deportistaId, estado, motivoFinal, motivoTextoFinal]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al guardar tu confirmación' });
   }
 });
 
@@ -430,6 +550,42 @@ router.put('/:id/directo/siguiente-parte', autenticar, async (req, res) => {
     if (err.status) return res.status(err.status).json({ error: err.message });
     console.error(err);
     res.status(500).json({ error: 'Error al avanzar de parte' });
+  }
+});
+
+// PUT /api/partidos/:id/directo/finalizar - botón de "finalizar ahora":
+// da el partido por terminado y jugado inmediatamente, sin importar
+// cuántas partes queden configuradas (a diferencia de
+// "siguiente-parte", que solo cierra la parte actual y pasa a la
+// siguiente, o finaliza si era la última). Pensado para partidos que se
+// cortan antes de tiempo (lesión grave, climatología, abandono...) y para
+// poder cerrar el directo sin tener que ir pulsando "siguiente parte"
+// una por una hasta agotar las partes que quedaban.
+router.put('/:id/directo/finalizar', autenticar, async (req, res) => {
+  try {
+    const partido = await partidoYPermisoGestion(req, req.params.id);
+    if (!partido.en_directo) {
+      return res.status(400).json({ error: 'El directo no está en marcha' });
+    }
+    let segundosAcumulados = partido.periodo_segundos_acumulados || 0;
+    if (partido.periodo_iniciado_en) {
+      segundosAcumulados += Math.floor((Date.now() - new Date(partido.periodo_iniciado_en).getTime()) / 1000);
+    }
+    const { rows } = await pool.query(
+      `UPDATE partidos SET
+         periodo = 'Finalizado',
+         en_directo = FALSE,
+         jugado = TRUE,
+         periodo_segundos_acumulados = $1,
+         periodo_iniciado_en = NULL
+       WHERE id = $2 RETURNING *`,
+      [segundosAcumulados, req.params.id]
+    );
+    res.json(filaAPartido(rows[0]));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Error al finalizar el partido' });
   }
 });
 
