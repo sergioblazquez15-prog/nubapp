@@ -1,0 +1,225 @@
+/* =====================================================================
+   NUBAPP - App del deportista ("Mi app")
+   =====================================================================
+   Pantalla aparte del resto de NUBAPP (fuera de <Layout>, como el
+   Directo a pantalla completa): pensada para el móvil, con cabecera +
+   contenido con scroll + navegación inferior de pestañas, siguiendo el
+   boceto que se validó con Sergio. Todas las clases van prefijadas con
+   "da-" para no chocar con nada de global.css.
+   ===================================================================== */
+
+.da-raiz {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #ECEDEF;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Work Sans', sans-serif;
+  color: #171613;
+}
+
+.da-raiz button {
+  font-family: inherit;
+}
+
+.da-titular {
+  font-family: 'Oswald', sans-serif;
+  letter-spacing: .02em;
+}
+
+.da-boton-simple {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+/* --- cabecera --- */
+.da-cabecera {
+  flex: none;
+  background: #121212;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.da-cabecera-marca { display: flex; align-items: center; gap: 9px; }
+.da-cabecera-logo {
+  width: 28px; height: 28px; border-radius: 7px; background: #C9A227;
+  display: flex; align-items: center; justify-content: center;
+}
+.da-cabecera-logo span { color: #121212; font-weight: 700; font-size: 13px; }
+.da-cabecera-nombre-app { color: #F3EFE3; font-size: 15px; font-weight: 600; }
+.da-cabecera-usuario { display: flex; align-items: center; gap: 8px; }
+.da-cabecera-usuario-texto { text-align: right; }
+.da-cabecera-usuario-nombre { color: #F3EFE3; font-size: 12px; font-weight: 600; }
+.da-cabecera-usuario-deportes { color: #8C8776; font-size: 10px; margin-top: 1px; }
+.da-avatar-cabecera {
+  width: 30px; height: 30px; border-radius: 99px; background: #C9A227;
+  display: flex; align-items: center; justify-content: center; flex: none;
+}
+.da-avatar-cabecera span { color: #171613; font-weight: 700; font-size: 12px; }
+.da-boton-salir {
+  border: 1px solid rgba(243,239,227,0.35); background: none; color: #F3EFE3;
+  border-radius: 8px; padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+
+/* --- contenido --- */
+.da-contenido {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 18px 16px 90px;
+  max-width: 520px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.da-titulo-pantalla {
+  margin: 0 0 4px;
+  font-size: 20px;
+  color: #171613;
+  font-weight: 600;
+}
+.da-subtitulo-pantalla {
+  margin: 0 0 18px;
+  color: #5B584F;
+  font-size: 12.5px;
+}
+
+.da-grupo-titulo {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: #6E6A5E; font-weight: 700; margin: 22px 0 10px;
+}
+.da-grupo-titulo:first-child { margin-top: 0; }
+
+.da-tarjeta {
+  background: #FFFFFF; border-radius: 12px; border: 1px solid rgba(18,16,10,0.10); padding: 16px;
+}
+
+/* --- tarjeta de sesión / confirmación de asistencia --- */
+.da-tarjeta-sesion {
+  background: #FFFFFF; border-radius: 12px; border: 1px solid rgba(18,16,10,0.10);
+  padding: 14px; margin-bottom: 10px;
+}
+.da-fila-fecha-sesion { display: flex; align-items: center; gap: 12px; }
+.da-bloque-fecha { flex: none; width: 46px; text-align: center; }
+.da-bloque-fecha .da-num { font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 600; color: #171613; line-height: 1; }
+.da-bloque-fecha .da-mes { font-size: 10px; color: #8C8776; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; margin-top: 2px; }
+.da-info-sesion { flex-grow: 1; min-width: 0; }
+.da-info-sesion .da-deporte { font-size: 14px; font-weight: 600; color: #171613; }
+.da-info-sesion .da-detalle { font-size: 12px; color: #5B584F; margin-top: 2px; }
+.da-etiqueta-recuperacion {
+  display: inline-block; margin-top: 4px; font-size: 10px; font-weight: 700; color: #8A6A1E;
+  background: rgba(201,162,39,0.16); padding: 2px 8px; border-radius: 99px;
+}
+
+.da-toggle-asistencia { display: flex; gap: 8px; margin-top: 12px; }
+.da-boton-estado {
+  flex: 1; padding: 9px 0; border-radius: 8px; border: 1.5px solid #171613;
+  font-size: 13px; font-weight: 600; text-align: center; background: #FFFFFF; color: #171613; cursor: pointer;
+}
+.da-boton-estado:disabled { opacity: .6; cursor: default; }
+.da-boton-estado.da-activo-asisto { background: #171613; color: #F3EFE3; }
+.da-boton-no-asisto { border-color: #B3452C; color: #B3452C; }
+.da-boton-no-asisto.da-activo-no { background: #B3452C; color: #FFFFFF; border-color: #B3452C; }
+
+.da-bloque-motivo { margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(18,16,10,0.14); }
+.da-etiqueta-motivo { font-size: 11px; color: #5B584F; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 8px; }
+.da-chips-motivo { display: flex; flex-wrap: wrap; gap: 6px; }
+.da-chip-motivo {
+  padding: 6px 12px; border-radius: 99px; border: 1.5px solid rgba(18,16,10,0.18);
+  background: #FFFFFF; font-size: 12px; font-weight: 600; color: #5B584F; cursor: pointer;
+}
+.da-chip-motivo.da-activo { background: #171613; border-color: #171613; color: #F3EFE3; }
+.da-input-otro-motivo {
+  width: 100%; box-sizing: border-box; margin-top: 8px; padding: 9px 10px;
+  border-radius: 8px; border: 1.5px solid rgba(18,16,10,0.18); font-size: 13px; font-family: inherit;
+}
+.da-nota-guardado { font-size: 11px; color: #8C8776; margin-top: 8px; }
+
+/* --- filas resumen (cuotas / asistencia) --- */
+.da-fila-resumen {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid rgba(18,16,10,0.08); font-size: 13px; gap: 10px;
+}
+.da-fila-resumen:last-of-type { border-bottom: none; }
+.da-estado-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+.da-estado-pill.da-pagada { background: rgba(23,22,19,0.08); color: #171613; }
+.da-estado-pill.da-pendiente { background: rgba(179,69,44,0.12); color: #B3452C; }
+.da-estado-pill.da-asistio { background: rgba(23,22,19,0.08); color: #171613; }
+.da-estado-pill.da-no-asistio { background: rgba(179,69,44,0.12); color: #B3452C; }
+.da-estado-pill.da-justificada { background: rgba(201,162,39,0.18); color: #8A6A1E; }
+.da-estado-pill.da-pendiente-confirmar { background: rgba(18,16,10,0.06); color: #8C8776; }
+.da-enlace-boton { color: #8A6A1E; font-size: 12px; font-weight: 600; margin-top: 10px; display: inline-block; }
+
+/* --- calendario del mes --- */
+.da-cabecera-mes { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.da-nombre-mes { font-family: 'Oswald', sans-serif; font-size: 15px; font-weight: 600; color: #171613; text-transform: capitalize; }
+.da-flecha-mes {
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(18,16,10,0.14);
+  background: #FFFFFF; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 15px;
+}
+.da-flecha-mes:disabled { opacity: .35; cursor: default; }
+.da-grid-dias-semana { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 4px; margin-bottom: 6px; }
+.da-grid-dias-semana span { font-size: 10px; color: #8C8776; font-weight: 700; text-align: center; text-transform: uppercase; }
+.da-fila-semana { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 4px; margin-bottom: 4px; }
+.da-dia-mes {
+  aspect-ratio: 1; border-radius: 8px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; font-size: 12px; color: #171613; position: relative;
+}
+.da-dia-mes.da-dia-hoy { background: rgba(201,162,39,0.16); font-weight: 700; }
+.da-punto-dia { width: 5px; height: 5px; border-radius: 99px; margin-top: 3px; }
+.da-punto-dia.da-punto-normal { background: #171613; }
+.da-punto-dia.da-punto-recuperacion { background: #C9A227; }
+.da-punto-dia.da-punto-partido { background: #FFFFFF; border: 1.5px solid #171613; }
+.da-leyenda-mes { display: flex; gap: 14px; margin-top: 12px; flex-wrap: wrap; }
+.da-leyenda-mes span { font-size: 11px; color: #5B584F; display: flex; align-items: center; gap: 5px; }
+.da-leyenda-mes .da-punto-dia { margin-top: 0; }
+
+/* --- ficha / asistencia / cuotas / stats --- */
+.da-fila-dato { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid rgba(18,16,10,0.08); font-size: 13px; }
+.da-fila-dato:last-child { border-bottom: none; }
+.da-fila-dato .da-etiqueta { color: #8C8776; }
+.da-fila-dato .da-valor { color: #171613; font-weight: 600; text-align: right; }
+.da-aviso-solo-lectura {
+  display: flex; align-items: center; gap: 8px; background: rgba(23,22,19,0.05);
+  border-radius: 10px; padding: 10px 12px; font-size: 11.5px; color: #5B584F; margin-bottom: 14px;
+}
+
+.da-tarjetas-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.da-tarjeta-stat { background: #FFFFFF; border-radius: 12px; border: 1px solid rgba(18,16,10,0.10); padding: 14px; }
+.da-tarjeta-stat .da-dato { font-family: 'Oswald', sans-serif; font-size: 26px; font-weight: 600; color: #171613; }
+.da-tarjeta-stat .da-dato.da-dorado { color: #C9A227; }
+.da-tarjeta-stat .da-label { font-size: 11px; color: #8C8776; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
+
+.da-tarjeta-proximo { margin-bottom: 10px; }
+.da-tarjeta-proximo-etiqueta { font-size: 11px; color: #8A6A1E; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; }
+.da-tarjeta-proximo-titulo { font-size: 13px; color: #171613; font-weight: 600; }
+.da-tarjeta-proximo-detalle { font-size: 12px; color: #5B584F; margin-top: 2px; }
+
+.da-vacio { font-size: 12.5px; color: #8C8776; padding: 6px 0; }
+
+/* --- navegación inferior --- */
+.da-nav-inferior {
+  flex: none; background: #FFFFFF; border-top: 1px solid rgba(18,16,10,0.10);
+  display: flex; padding: 8px 4px; position: sticky; bottom: 0;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+.da-nav-boton {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0; cursor: pointer;
+}
+.da-nav-boton span { font-size: 10px; font-weight: 600; }
+
+.da-estado-carga { padding: 40px 16px; text-align: center; color: #5B584F; font-size: 13px; }
+
+@media (min-width: 640px) {
+  .da-contenido { padding-top: 26px; }
+}

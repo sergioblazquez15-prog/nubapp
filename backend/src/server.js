@@ -40,6 +40,12 @@ app.use('/api/planificaciones', planificacionesRouter);
 app.use('/api/metodologia', metodologiaRouter);
 app.use('/api/competiciones', competicionesRouter);
 
+// Mantiene al día en segundo plano los calendarios/resultados de todos los
+// equipos con una URL de RFFM guardada (ver routes/partidos.js) - así no
+// hace falta entrar a pulsar "importar" cada semana para que se vean los
+// resultados de la jornada.
+partidosRouter.iniciarSincronizacionAutomatica();
+
 app.get('/api/salud', (req, res) => res.json({ estado: 'ok' }));
 
 // En producción (Docker), el frontend ya viene compilado en

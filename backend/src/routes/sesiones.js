@@ -254,23 +254,36 @@ router.get('/calendario', autenticar, async (req, res) => {
     return res.status(400).json({ error: 'deportistaId, desde y hasta son obligatorios' });
   }
   try {
-    const { rows: equiposDelDeportista } = await pool.query(
-      'SELECT DISTINCT equipo_id FROM deportista_equipo_temporada WHERE deportista_id = $1',
-      [deportistaId]
-    );
-    const { roles, id: usuarioId } = req.usuario;
-    if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
+    const { roles, id: usuarioId, deportistaId: propioDeportistaId } = req.usuario;
+    // Un deportista que entra con su propio usuario siempre puede ver SU
+    // calendario (es la base de "Mi app" - confirmar asistencia, ver el
+    // mes...) sin necesitar ningún equipo_personal asignado.
+    const esElMismo = Boolean(propioDeportistaId) && propioDeportistaId === deportistaId;
+    if (!esElMismo && !roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
+      const { rows: equiposDelDeportista } = await pool.query(
+        'SELECT DISTINCT equipo_id FROM deportista_equipo_temporada WHERE deportista_id = $1',
+        [deportistaId]
+      );
       let autorizado = false;
       for (const eq of equiposDelDeportista) {
         if (await usuarioEsPersonalDelEquipo(usuarioId, eq.equipo_id)) { autorizado = true; break; }
       }
       if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
     }
+    // Se añade también la asistencia de ESE deportista a cada sesión (con
+    // o sin fila todavía): confirmacion_previa/motivo/motivo_texto son lo
+    // que él mismo marca desde su app; asistio/justificada es lo que
+    // marca el monitor/entrenador el día de la sesión (nunca editable por
+    // el deportista). Así una sola llamada sirve tanto para "Inicio"
+    // (confirmar semana en curso/siguiente + calendario del mes) como
+    // para la pestaña "Asistencia" (histórico real).
     const { rows } = await pool.query(
-      `SELECT s.*, e.nombre AS equipo_nombre, dep.nombre AS deporte_nombre
+      `SELECT s.*, e.nombre AS equipo_nombre, dep.nombre AS deporte_nombre,
+              a.confirmacion_previa, a.motivo, a.motivo_texto, a.asistio, a.justificada
        FROM sesiones s
        JOIN equipos e ON e.id = s.equipo_id
        JOIN deportes dep ON dep.id = e.deporte_id
+       LEFT JOIN asistencia a ON a.sesion_id = s.id AND a.deportista_id = $1
        WHERE s.fecha BETWEEN $2 AND $3
          AND (
            s.solo_deportista_id = $1
@@ -286,10 +299,68 @@ router.get('/calendario', autenticar, async (req, res) => {
       ...filaASesion(f),
       equipoNombre: f.equipo_nombre,
       deporteNombre: f.deporte_nombre,
+      confirmacionPrevia: f.confirmacion_previa || 'pendiente',
+      motivo: f.motivo,
+      motivoTexto: f.motivo_texto,
+      asistio: f.asistio,
+      justificada: f.justificada,
     })));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al consultar el calendario' });
+  }
+});
+
+// PUT /api/sesiones/:id/mi-confirmacion - el propio deportista confirma o
+// rechaza su asistencia a UNA sesión (antes de que se celebre), con motivo
+// si rechaza (enfermo/lesión/trabajo/otro, con texto libre si es "otro").
+// El deportista_id SIEMPRE se saca de su propio login (req.usuario), nunca
+// de un parámetro que pudiera venir manipulado - así nunca puede marcar la
+// asistencia de otro. Esto nunca toca asistio/justificada: esos campos son
+// solo del monitor/entrenador (ver PUT /:id/asistencia/:deportistaId).
+const MOTIVOS_VALIDOS = ['enfermo', 'lesion', 'trabajo', 'otro'];
+router.put('/:id/mi-confirmacion', autenticar, async (req, res) => {
+  const { estado, motivo, motivoTexto } = req.body;
+  const deportistaId = req.usuario.deportistaId;
+  if (!deportistaId) {
+    return res.status(403).json({ error: 'Tu usuario no tiene una ficha de deportista enlazada' });
+  }
+  if (!['pendiente', 'confirmado', 'rechazado'].includes(estado)) {
+    return res.status(400).json({ error: "estado debe ser 'pendiente', 'confirmado' o 'rechazado'" });
+  }
+  if (estado === 'rechazado' && !MOTIVOS_VALIDOS.includes(motivo)) {
+    return res.status(400).json({ error: `Si no asistes, el motivo debe ser una de: ${MOTIVOS_VALIDOS.join(', ')}` });
+  }
+  try {
+    const { rows: sesion } = await pool.query('SELECT * FROM sesiones WHERE id = $1', [req.params.id]);
+    if (!sesion[0]) return res.status(404).json({ error: 'Sesión no encontrada' });
+    if (sesion[0].cancelada) return res.status(400).json({ error: 'Esta sesión está cancelada' });
+
+    const esMia = sesion[0].solo_deportista_id
+      ? sesion[0].solo_deportista_id === deportistaId
+      : (await pool.query(
+          `SELECT 1 FROM deportista_equipo_temporada
+           WHERE deportista_id = $1 AND equipo_id = $2 AND temporada_id = $3`,
+          [deportistaId, sesion[0].equipo_id, sesion[0].temporada_id]
+        )).rows.length > 0;
+    if (!esMia) return res.status(403).json({ error: 'No tienes permiso para esto' });
+
+    const motivoFinal = estado === 'rechazado' ? motivo : null;
+    const motivoTextoFinal = estado === 'rechazado' && motivo === 'otro' ? ((motivoTexto || '').trim() || null) : null;
+
+    await pool.query(
+      `INSERT INTO asistencia (sesion_id, deportista_id, confirmacion_previa, motivo, motivo_texto)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (sesion_id, deportista_id) DO UPDATE SET
+         confirmacion_previa = EXCLUDED.confirmacion_previa,
+         motivo = EXCLUDED.motivo,
+         motivo_texto = EXCLUDED.motivo_texto`,
+      [req.params.id, deportistaId, estado, motivoFinal, motivoTextoFinal]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al guardar tu confirmación' });
   }
 });
 

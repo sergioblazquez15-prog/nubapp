@@ -384,6 +384,128 @@ function FormularioDeportista({ deportesDisponibles, onCreado }) {
   );
 }
 
+// ---------- acceso propio del deportista a "Mi app" (solo administrador) ----------
+
+function AccesoApp({ deportista, onCambio }) {
+  const [mostrarForm, setMostrarForm] = useState(false);
+  const [mostrarReset, setMostrarReset] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [nuevaPassword, setNuevaPassword] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [mensaje, setMensaje] = useState('');
+  const [error, setError] = useState('');
+
+  async function crearAcceso(evento) {
+    evento.preventDefault();
+    setError('');
+    setMensaje('');
+    setEnviando(true);
+    try {
+      await api.post(`/deportistas/${deportista.id}/acceso`, { email, password });
+      setMensaje(`Acceso creado: ${email}. Comunícaselo al deportista junto con la contraseña.`);
+      setEmail('');
+      setPassword('');
+      setMostrarForm(false);
+      onCambio();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  async function resetearPassword(evento) {
+    evento.preventDefault();
+    setError('');
+    setMensaje('');
+    setEnviando(true);
+    try {
+      await api.put(`/usuarios/${deportista.usuarioId}/password`, { password: nuevaPassword });
+      setMensaje('Contraseña actualizada. Comunícasela al deportista.');
+      setNuevaPassword('');
+      setMostrarReset(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  async function revocarAcceso() {
+    if (!confirm('¿Quitar el acceso propio a este deportista? Se puede volver a dar de alta más adelante.')) return;
+    setError('');
+    setMensaje('');
+    try {
+      await api.delete(`/deportistas/${deportista.id}/acceso`);
+      setMensaje('Acceso revocado.');
+      onCambio();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  if (deportista.usuarioId) {
+    return (
+      <div>
+        <p className="nota">Este deportista ya tiene acceso propio a "Mi app" (entra con su email y contraseña).</p>
+        {mensaje && <p className="nota" style={{ color: '#1a7a3a' }}>{mensaje}</p>}
+        {error && <p className="error">{error}</p>}
+        {!mostrarReset ? (
+          <div className="acciones-fila">
+            <button type="button" className="boton-lesion" onClick={() => setMostrarReset(true)}>Cambiar contraseña</button>
+            <button type="button" className="boton-lesion" onClick={revocarAcceso}>Quitar acceso</button>
+          </div>
+        ) : (
+          <form onSubmit={resetearPassword} className="acciones-fila" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="password"
+              placeholder="Nueva contraseña (mín. 8 caracteres)"
+              value={nuevaPassword}
+              onChange={(e) => setNuevaPassword(e.target.value)}
+              required
+              minLength={8}
+            />
+            <button type="submit" className="boton-ancho" disabled={enviando}>Guardar</button>
+            <button type="button" className="boton-lesion" onClick={() => setMostrarReset(false)}>Cancelar</button>
+          </form>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="nota">Este deportista todavía no tiene acceso propio a la app.</p>
+      {mensaje && <p className="nota" style={{ color: '#1a7a3a' }}>{mensaje}</p>}
+      {error && <p className="error">{error}</p>}
+      {!mostrarForm ? (
+        <button type="button" className="boton-lesion" onClick={() => setMostrarForm(true)}>Crear acceso</button>
+      ) : (
+        <form onSubmit={crearAcceso} className="acciones-fila" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="email"
+            placeholder="Email del deportista"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <input
+            type="password"
+            placeholder="Contraseña (mín. 8 caracteres)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+          />
+          <button type="submit" className="boton-ancho" disabled={enviando}>Crear</button>
+          <button type="button" className="boton-lesion" onClick={() => setMostrarForm(false)}>Cancelar</button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 // ---------- ficha completa: datos editables + historial de deportes ----------
 
 function DeportistaDetalle({ deportistaId, puedeGestionar, onVolver }) {
@@ -520,6 +642,13 @@ function DeportistaDetalle({ deportistaId, puedeGestionar, onVolver }) {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {tieneRol('administrador') && (
+        <div className="bloque-ficha">
+          <h2>🔑 Acceso a "Mi app"</h2>
+          <AccesoApp deportista={deportista} onCambio={cargarTodo} />
         </div>
       )}
 

@@ -19,12 +19,14 @@ router.post('/login', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT u.id, u.email, u.password_hash, u.nombre_completo, u.inactivo,
+              d.id AS deportista_id,
               COALESCE(array_agg(r.nombre) FILTER (WHERE r.nombre IS NOT NULL), '{}') AS roles
        FROM usuarios u
        LEFT JOIN usuario_roles ur ON ur.usuario_id = u.id
        LEFT JOIN roles r ON r.id = ur.rol_id
+       LEFT JOIN deportistas d ON d.usuario_id = u.id
        WHERE u.email = $1
-       GROUP BY u.id`,
+       GROUP BY u.id, d.id`,
       [email.toLowerCase().trim()]
     );
 
@@ -59,6 +61,7 @@ router.post('/login', async (req, res) => {
         email: usuario.email,
         nombreCompleto: usuario.nombre_completo,
         roles: usuario.roles,
+        deportistaId: usuario.deportista_id,
       },
     });
   } catch (err) {
@@ -75,6 +78,7 @@ router.get('/yo', require('../middleware/auth').autenticar, (req, res) => {
     email: req.usuario.email,
     nombreCompleto: req.usuario.nombre_completo,
     roles: req.usuario.roles,
+    deportistaId: req.usuario.deportistaId,
   });
 });
 

@@ -7,9 +7,12 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const bcrypt = require('bcrypt');
 const pool = require('../config/db');
 const { autenticar } = require('../middleware/auth');
 const { requiereRol, ACCESO_TOTAL_LECTURA, GESTION_DEPORTIVA } = require('../middleware/permisos');
+
+const RONDAS_BCRYPT = 10;
 
 // ---- subida de foto del deportista ----
 const CARPETA_FOTOS = path.join(__dirname, '..', '..', 'uploads', 'deportistas');
@@ -554,6 +557,175 @@ router.put('/:id/lesion', autenticar, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar la lesión' });
+  }
+});
+
+// --- Acceso propio a la app (login del deportista) ---------------------
+
+// POST /api/deportistas/:id/acceso - crea un usuario de login con rol
+// "deportista" y lo enlaza a esta ficha (deportistas.usuario_id), para que
+// pueda entrar a "Mi app" con su propio email/contraseña. Solo
+// administrador (es dar de alta una cuenta, igual que en Usuarios). Si el
+// deportista ya tenía un acceso propio, hay que quitárselo primero (no se
+// sobrescribe sin más, para no perder sin querer la cuenta anterior).
+router.post('/:id/acceso', autenticar, requiereRol('administrador'), async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password || password.length < 8) {
+    return res.status(400).json({ error: 'email y contraseña (mínimo 8 caracteres) son obligatorios' });
+  }
+  const cliente = await pool.connect();
+  try {
+    await cliente.query('BEGIN');
+    const { rows: actual } = await cliente.query(
+      'SELECT usuario_id, nombre, apellidos FROM deportistas WHERE id = $1 FOR UPDATE',
+      [req.params.id]
+    );
+    if (!actual[0]) { await cliente.query('ROLLBACK'); return res.status(404).json({ error: 'Deportista no encontrado' }); }
+    if (actual[0].usuario_id) {
+      await cliente.query('ROLLBACK');
+      return res.status(409).json({ error: 'Este deportista ya tiene un acceso propio' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, RONDAS_BCRYPT);
+    const nombreCompleto = `${actual[0].nombre} ${actual[0].apellidos}`;
+    const { rows: nuevoUsuario } = await cliente.query(
+      `INSERT INTO usuarios (email, password_hash, nombre_completo) VALUES ($1, $2, $3) RETURNING id`,
+      [email.toLowerCase().trim(), passwordHash, nombreCompleto]
+    );
+    const usuarioId = nuevoUsuario[0].id;
+
+    const { rows: rolDeportista } = await cliente.query(`SELECT id FROM roles WHERE nombre = 'deportista'`);
+    await cliente.query('INSERT INTO usuario_roles (usuario_id, rol_id) VALUES ($1, $2)', [usuarioId, rolDeportista[0].id]);
+    await cliente.query('UPDATE deportistas SET usuario_id = $1 WHERE id = $2', [usuarioId, req.params.id]);
+
+    await cliente.query('COMMIT');
+    res.status(201).json({ usuarioId, email: email.toLowerCase().trim() });
+  } catch (err) {
+    await cliente.query('ROLLBACK');
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Error al crear el acceso' });
+  } finally {
+    cliente.release();
+  }
+});
+
+// DELETE /api/deportistas/:id/acceso - revoca el acceso propio: desenlaza
+// la ficha de su usuario y deja ese usuario inactivo (no se borra, para no
+// perder histórico de quién hizo qué). Solo administrador.
+router.delete('/:id/acceso', autenticar, requiereRol('administrador'), async (req, res) => {
+  const cliente = await pool.connect();
+  try {
+    await cliente.query('BEGIN');
+    const { rows: actual } = await cliente.query('SELECT usuario_id FROM deportistas WHERE id = $1 FOR UPDATE', [req.params.id]);
+    if (!actual[0]) { await cliente.query('ROLLBACK'); return res.status(404).json({ error: 'Deportista no encontrado' }); }
+    if (!actual[0].usuario_id) { await cliente.query('ROLLBACK'); return res.status(404).json({ error: 'Este deportista no tiene acceso propio' }); }
+
+    await cliente.query('UPDATE deportistas SET usuario_id = NULL WHERE id = $1', [req.params.id]);
+    await cliente.query('UPDATE usuarios SET inactivo = TRUE WHERE id = $1', [actual[0].usuario_id]);
+
+    await cliente.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await cliente.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Error al revocar el acceso' });
+  } finally {
+    cliente.release();
+  }
+});
+
+// --- Estadísticas (para "Mi app" del deportista) ------------------------
+
+// GET /api/deportistas/:id/estadisticas - resumen por cada deporte que
+// practica ACTUALMENTE: en deportes de equipo (fútbol, baloncesto) los
+// partidos jugados/convocatorias/goles/tarjetas (de partidos_alineacion +
+// partidos_eventos) más la asistencia a entrenamientos de esa temporada;
+// en deportes individuales, solo la asistencia. Mismo criterio de acceso
+// que el resto de la ficha: administración ve cualquiera, personal técnico
+// solo los suyos, y el propio deportista solo lo suyo.
+router.get('/:id/estadisticas', autenticar, async (req, res) => {
+  const { roles, id: usuarioId } = req.usuario;
+  try {
+    if (!roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) {
+      const autorizado = (await tieneAccesoPorEquipo(usuarioId, req.params.id)) || (await esElMismo(usuarioId, req.params.id));
+      if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+
+    const { rows: equipos } = await pool.query(
+      `SELECT DISTINCT e.id AS equipo_id, e.nombre AS equipo_nombre,
+              dep.id AS deporte_id, dep.nombre AS deporte_nombre, dep.tipo AS deporte_tipo,
+              det.temporada_id
+       FROM deportista_equipo_temporada det
+       JOIN equipos e ON e.id = det.equipo_id
+       JOIN deportes dep ON dep.id = e.deporte_id
+       JOIN temporadas t ON t.id = det.temporada_id
+       WHERE det.deportista_id = $1 AND t.es_principal = TRUE AND e.inactivo = FALSE
+       ORDER BY dep.nombre, e.nombre`,
+      [req.params.id]
+    );
+
+    const porDeporte = [];
+    for (const eq of equipos) {
+      const { rows: asistenciaRows } = await pool.query(
+        `SELECT COUNT(a.id) FILTER (WHERE a.id IS NOT NULL) AS convocado,
+                COUNT(a.id) FILTER (WHERE a.asistio = TRUE) AS asistidas
+         FROM sesiones s
+         LEFT JOIN asistencia a ON a.sesion_id = s.id AND a.deportista_id = $1
+         WHERE s.equipo_id = $2 AND s.temporada_id = $3 AND s.cancelada = FALSE
+           AND (s.solo_deportista_id IS NULL OR s.solo_deportista_id = $1)`,
+        [req.params.id, eq.equipo_id, eq.temporada_id]
+      );
+      const convocado = Number(asistenciaRows[0].convocado);
+      const asistidas = Number(asistenciaRows[0].asistidas);
+
+      let partidos = null;
+      if (eq.deporte_tipo === 'equipo') {
+        const { rows: partidosRows } = await pool.query(
+          `SELECT
+             COUNT(DISTINCT pa.partido_id) AS convocatorias,
+             COUNT(DISTINCT pa.partido_id) FILTER (WHERE p.jugado) AS jugados,
+             COALESCE(SUM(CASE WHEN pe.tipo = 'gol_propio' THEN 1 ELSE 0 END), 0) AS goles,
+             COALESCE(SUM(CASE WHEN pe.tipo = 'tarjeta_amarilla_propio' THEN 1 ELSE 0 END), 0) AS amarillas,
+             COALESCE(SUM(CASE WHEN pe.tipo = 'tarjeta_roja_propio' THEN 1 ELSE 0 END), 0) AS rojas
+           FROM partidos_alineacion pa
+           JOIN partidos p ON p.id = pa.partido_id AND p.equipo_id = $2
+           LEFT JOIN partidos_eventos pe ON pe.partido_id = pa.partido_id AND pe.deportista_id = pa.deportista_id
+           WHERE pa.deportista_id = $1`,
+          [req.params.id, eq.equipo_id]
+        );
+        const pr = partidosRows[0];
+        partidos = {
+          convocatorias: Number(pr.convocatorias),
+          jugados: Number(pr.jugados),
+          goles: Number(pr.goles),
+          amarillas: Number(pr.amarillas),
+          rojas: Number(pr.rojas),
+        };
+      }
+
+      porDeporte.push({
+        deporteId: eq.deporte_id,
+        deporteNombre: eq.deporte_nombre,
+        tipo: eq.deporte_tipo,
+        equipoId: eq.equipo_id,
+        equipoNombre: eq.equipo_nombre,
+        temporadaId: eq.temporada_id,
+        partidos,
+        asistencia: {
+          convocado,
+          asistidas,
+          porcentaje: convocado > 0 ? Math.round((asistidas / convocado) * 100) : null,
+        },
+      });
+    }
+
+    res.json({ porDeporte });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al calcular las estadísticas' });
   }
 });
 

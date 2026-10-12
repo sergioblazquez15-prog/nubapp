@@ -36,6 +36,8 @@ export default function Partidos() {
   const [error, setError] = useState('');
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [mostrarImportar, setMostrarImportar] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [resultadoSincronizacion, setResultadoSincronizacion] = useState(null);
 
   useEffect(() => {
     async function inicial() {
@@ -95,6 +97,24 @@ export default function Partidos() {
     cargarPartidos();
   }
 
+  // Relanza la importación de todos los equipos que ya tienen una URL de
+  // RFFM guardada, de golpe (los resultados también se refrescan solos en
+  // segundo plano cada pocas horas, esto es solo para no tener que
+  // esperar si se quiere ver algo actualizado ya).
+  async function sincronizarTodos() {
+    setSincronizando(true);
+    setResultadoSincronizacion(null);
+    try {
+      const r = await api.post('/partidos/sincronizar-todos', {});
+      setResultadoSincronizacion(r.resultados);
+      cargarPartidos();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSincronizando(false);
+    }
+  }
+
   return (
     <div className="pantalla-partidos">
       <CabeceraInforme titulo="Informe de partidos" />
@@ -125,11 +145,33 @@ export default function Partidos() {
             <button onClick={() => setMostrarImportar((v) => !v)}>
               {mostrarImportar ? 'Cancelar' : '🌐 Importar calendario (RFFM)'}
             </button>
+            <button onClick={sincronizarTodos} disabled={sincronizando}>
+              {sincronizando ? 'Actualizando…' : '🔄 Actualizar todos los calendarios'}
+            </button>
           </>
         )}
       </div>
 
       {error && <p className="error">{error}</p>}
+
+      {resultadoSincronizacion && (
+        <div className="nota" style={{ background: 'var(--color-superficie-alt)', padding: 10, borderRadius: 8, marginBottom: 16 }}>
+          <p style={{ margin: 0 }}>
+            {resultadoSincronizacion.length === 0
+              ? 'Ningún equipo tiene todavía una URL de RFFM guardada (impórtala una vez desde "Importar calendario" y a partir de ahí ya se actualiza sola).'
+              : `Sincronizados ${resultadoSincronizacion.length} equipo(s) con calendario de RFFM.`}
+          </p>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+            {resultadoSincronizacion.map((r) => (
+              <li key={r.equipoId} className={r.ok ? '' : 'texto-peligro'}>
+                {r.equipoNombre}: {r.ok
+                  ? `${r.partidosCreados} nuevos · ${r.partidosActualizados} actualizados${r.partidosEliminados > 0 ? ` · ${r.partidosEliminados} eliminados` : ''}`
+                  : r.error}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {mostrarFormulario && (
         <FormularioPartido equipos={equipos} equipoInicialId={equipoFiltroId} onCrear={crearPartido} />

@@ -1,6 +1,7 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Inicio from './pages/Inicio';
+import DeportistaApp from './pages/DeportistaApp';
 import Usuarios from './pages/Usuarios';
 import Deportistas from './pages/Deportistas';
 import Equipos from './pages/Equipos';
@@ -15,6 +16,7 @@ import Scout from './pages/Scout';
 import TraspasoTemporada from './pages/TraspasoTemporada';
 import { Layout } from './components/Layout';
 import { RutaProtegida } from './components/RutaProtegida';
+import { useAuth } from './auth/AuthContext';
 
 // Perfiles con acceso amplio a "Dirección deportiva" (banco de
 // ejercicios, planificación, plantillas, competición). El monitor queda
@@ -25,6 +27,18 @@ const PERSONAL_TECNICO = ['administrador', 'direccion_deportiva', 'coordinador',
 const PERSONAL_TECNICO_Y_MONITOR = [...PERSONAL_TECNICO, 'monitor'];
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
 const ACCESO_TOTAL_LECTURA = ['administrador', 'direccion_deportiva'];
+const PERSONAL_CLUB = ['administrador', 'direccion_deportiva', 'coordinador', 'entrenador', 'monitor'];
+
+// Un usuario que SOLO tiene el rol "deportista" (sin ningún rol de
+// personal del club) no tiene nada que hacer en el panel de Inicio de
+// dirección deportiva - "/" le manda directo a su propia app.
+function InicioOMiApp() {
+  const { tieneRol } = useAuth();
+  if (tieneRol('deportista') && !tieneRol(...PERSONAL_CLUB)) {
+    return <Navigate to="/mi-app" replace />;
+  }
+  return <Inicio />;
+}
 
 export default function App() {
   return (
@@ -43,6 +57,18 @@ export default function App() {
         }
       />
 
+      {/* App del deportista: fuera del layout con menú de dirección
+          deportiva (como Directo y Login), con su propia cabecera y
+          navegación inferior pensadas para el móvil. */}
+      <Route
+        path="/mi-app"
+        element={
+          <RutaProtegida roles={['deportista']}>
+            <DeportistaApp />
+          </RutaProtegida>
+        }
+      />
+
       <Route
         element={
           <RutaProtegida>
@@ -50,7 +76,7 @@ export default function App() {
           </RutaProtegida>
         }
       >
-        <Route path="/" element={<Inicio />} />
+        <Route path="/" element={<InicioOMiApp />} />
         <Route
           path="/deportistas"
           element={

@@ -112,10 +112,24 @@ async function usuarioEsPersonalDelEquipo(usuarioId, equipoId) {
   return rows.length > 0;
 }
 
+// Un deportista con su propio login puede ver los partidos de un equipo si
+// él mismo está fichado en ese equipo (para "Próximos partidos" en su
+// app) - sin esto, un deportista sin ningún equipo_personal asignado (su
+// caso normal) no podría ver ni sus propios partidos.
+async function deportistaEsDelEquipo(deportistaId, equipoId) {
+  if (!deportistaId) return false;
+  const { rows } = await pool.query(
+    'SELECT 1 FROM deportista_equipo_temporada WHERE deportista_id = $1 AND equipo_id = $2 LIMIT 1',
+    [deportistaId, equipoId]
+  );
+  return rows.length > 0;
+}
+
 async function puedeVerEquipo(req, equipoId) {
-  const { roles, id: usuarioId } = req.usuario;
+  const { roles, id: usuarioId, deportistaId } = req.usuario;
   if (roles.some((r) => ACCESO_TOTAL_LECTURA.includes(r))) return true;
-  return usuarioEsPersonalDelEquipo(usuarioId, equipoId);
+  if (await usuarioEsPersonalDelEquipo(usuarioId, equipoId)) return true;
+  return deportistaEsDelEquipo(deportistaId, equipoId);
 }
 
 // Devuelve el partido si el usuario puede GESTIONARLO (dirección
@@ -891,10 +905,229 @@ function parsearFechaHoraFlexible(fechaBruta, horaBruta) {
   return { fecha, hora };
 }
 
+// Error "de negocio" al importar (URL mala, sin datos reconocibles...):
+// se distingue de un fallo interno para poder devolver el mensaje tal
+// cual tanto desde la ruta manual como desde la sincronización en
+// segundo plano (que solo lo apunta en el log, no hay a quién
+// respondérselo).
+class ErrorImportacion extends Error {
+  constructor(status, mensaje) {
+    super(mensaje);
+    this.status = status;
+  }
+}
+
+// Busca (o crea si no existe) la competición del equipo/temporada para
+// poder enlazar los partidos importados con el apartado "Competiciones"
+// de la app - antes la importación nunca la creaba, así que después de
+// importar un calendario la competición no aparecía por ningún sitio.
+// El nombre se arma con lo que la propia RFFM devuelve en el calendario
+// (p.ej. "PREFERENTE CADETE · Grupo 1"); si por lo que sea no se puede
+// leer (formato inesperado), simplemente no se enlaza ninguna y los
+// partidos se importan igual, solo que sin competición asociada.
+async function obtenerOCrearCompeticion(datos, equipoId, temporadaId, usuarioId) {
+  const infoCalendario = datos?.props?.pageProps?.calendar;
+  const nombre = [infoCalendario?.competicion, infoCalendario?.grupo]
+    .map((t) => (t || '').trim())
+    .filter(Boolean)
+    .join(' · ');
+  if (!nombre) return { competicionId: null, nombreCompeticion: null };
+
+  const { rows: existente } = await pool.query(
+    `SELECT id FROM competiciones WHERE equipo_id = $1 AND temporada_id = $2 AND nombre = $3`,
+    [equipoId, temporadaId, nombre]
+  );
+  if (existente[0]) return { competicionId: existente[0].id, nombreCompeticion: nombre };
+
+  try {
+    const { rows: creada } = await pool.query(
+      `INSERT INTO competiciones (equipo_id, temporada_id, nombre, tipo, creado_por)
+       VALUES ($1, $2, $3, 'liga', $4) RETURNING id`,
+      [equipoId, temporadaId, nombre, usuarioId]
+    );
+    return { competicionId: creada[0].id, nombreCompeticion: nombre };
+  } catch (err) {
+    // condición de carrera con otra importación simultánea del mismo
+    // equipo/temporada/nombre (UNIQUE) - basta con releer la que ganó
+    if (err.code === '23505') {
+      const { rows: ganadora } = await pool.query(
+        `SELECT id FROM competiciones WHERE equipo_id = $1 AND temporada_id = $2 AND nombre = $3`,
+        [equipoId, temporadaId, nombre]
+      );
+      if (ganadora[0]) return { competicionId: ganadora[0].id, nombreCompeticion: nombre };
+    }
+    throw err;
+  }
+}
+
+// Núcleo de la importación, sin nada de Express: recibe los mismos datos
+// que antes llevaba el body de la petición más el usuarioId (para poder
+// llamarse también desde la sincronización automática en segundo plano,
+// que no tiene una petición HTTP real detrás). Lanza ErrorImportacion
+// para los fallos "esperables" (URL inválida, RFFM caída, formato no
+// reconocido...) y devuelve el mismo resumen que antes se mandaba tal
+// cual como respuesta JSON.
+async function importarCalendarioParaEquipo(equipoId, temporadaId, url, usuarioId) {
+  let urlValida;
+  try {
+    urlValida = new URL(url);
+  } catch {
+    throw new ErrorImportacion(400, 'La URL no es válida');
+  }
+  if (!/(^|\.)rffm\.es$/.test(urlValida.hostname)) {
+    throw new ErrorImportacion(400, 'Por ahora solo se admite un enlace de calendario de rffm.es');
+  }
+
+  const { rows: equipoRows } = await pool.query('SELECT nombre_club_competicion FROM equipos WHERE id = $1', [equipoId]);
+  if (!equipoRows[0]) throw new ErrorImportacion(404, 'Equipo no encontrado');
+  const nombreClub = equipoRows[0].nombre_club_competicion;
+  if (!nombreClub) {
+    throw new ErrorImportacion(400,
+      'A este equipo le falta el "nombre del club en la competición" (cómo os llama la RFFM, ej. "AD Nuevo Baztán"). '
+        + 'Rellénalo en la ficha del equipo antes de importar, para poder distinguir el rival en cada partido.');
+  }
+  const clavePropia = clavesIdentificativas(nombreClub);
+
+  let respuesta;
+  try {
+    respuesta = await fetch(urlValida.toString(), {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+        Accept: 'text/html',
+      },
+    });
+  } catch (err) {
+    throw new ErrorImportacion(502, `No se ha podido contactar con la RFFM: ${err.message}`);
+  }
+  if (!respuesta.ok) {
+    throw new ErrorImportacion(502, `La RFFM ha respondido con un error (${respuesta.status}) para ese enlace`);
+  }
+  const html = await respuesta.text();
+  const datos = extraerNextData(html);
+  if (!datos) {
+    throw new ErrorImportacion(502,
+      'La página se ha podido descargar pero no se ha encontrado el bloque de datos esperado (__NEXT_DATA__). '
+        + 'Puede que la RFFM haya cambiado el formato de su web.');
+  }
+  const partidosEncontrados = extraerPartidosDeCalendarRFFM(datos) || buscarArrayDePartidos(datos);
+  if (!partidosEncontrados || partidosEncontrados.length === 0) {
+    throw new ErrorImportacion(502,
+      'Se ha leído la página pero no se ha reconocido ningún partido dentro de sus datos. '
+        + 'Asegúrate de que el enlace es el de la página de RFFM DESPUÉS de elegir la competición y el grupo '
+        + 'y pulsar "BUSCAR" (la URL debe llevar al final algo como "?temporada=...&tipojuego=...&competicion=...&grupo=..."); '
+        + 'el enlace genérico de "Calendario" sin esos parámetros no lleva partidos. '
+        + 'Si el enlace ya los lleva, puede que la RFFM haya cambiado el formato de su web.');
+  }
+
+  const { competicionId, nombreCompeticion } = await obtenerOCrearCompeticion(datos, equipoId, temporadaId, usuarioId);
+
+  let creados = 0;
+  let actualizados = 0;
+  let ignorados = 0;
+  const rivalesSinReconocer = [];
+  const idsValidosDeEstaImportacion = [];
+
+  for (const p of partidosEncontrados) {
+    const nombreLocal = textoDeCampo(buscarCampo(p, ALIAS_LOCAL));
+    const nombreVisitante = textoDeCampo(buscarCampo(p, ALIAS_VISITANTE));
+    const fh = parsearFechaHoraFlexible(buscarCampo(p, ALIAS_FECHA), buscarCampo(p, ALIAS_HORA));
+    if (!nombreLocal || !nombreVisitante || !fh) { ignorados++; continue; }
+
+    const localEsNuestro = esNuestroEquipo(nombreLocal, clavePropia);
+    const visitanteEsNuestro = esNuestroEquipo(nombreVisitante, clavePropia);
+    if (localEsNuestro === visitanteEsNuestro) {
+      // o no aparecemos en ninguno de los dos lados, o (raro) en los dos - no se puede decidir el rival
+      rivalesSinReconocer.push(`${nombreLocal} - ${nombreVisitante}`);
+      ignorados++;
+      continue;
+    }
+    const localVisitante = localEsNuestro ? 'local' : 'visitante';
+    const rival = localEsNuestro ? nombreVisitante : nombreLocal;
+    const escudoRival = localEsNuestro
+      ? urlDeCampo(buscarCampo(p, ALIAS_ESCUDO_VISITANTE))
+      : urlDeCampo(buscarCampo(p, ALIAS_ESCUDO_LOCAL));
+
+    const golesLocal = buscarCampo(p, ALIAS_GOLES_LOCAL);
+    const golesVisitante = buscarCampo(p, ALIAS_GOLES_VISITANTE);
+    const resultadoPropio = localEsNuestro ? golesLocal : golesVisitante;
+    const resultadoRival = localEsNuestro ? golesVisitante : golesLocal;
+    const jugado = resultadoPropio !== null && resultadoPropio !== undefined
+      && resultadoRival !== null && resultadoRival !== undefined;
+
+    const idExterno = String(buscarCampo(p, ALIAS_ID) ?? `${fh.fecha}-${nombreLocal}-${nombreVisitante}`).slice(0, 150);
+    const jornada = textoDeCampo(buscarCampo(p, ALIAS_JORNADA));
+    idsValidosDeEstaImportacion.push(idExterno);
+
+    const { rows: existente } = await pool.query(
+      `SELECT id FROM partidos WHERE equipo_id = $1 AND fuente_externa = 'rffm' AND id_externo = $2`,
+      [equipoId, idExterno]
+    );
+    if (existente[0]) {
+      await pool.query(
+        `UPDATE partidos SET fecha = $1, hora = $2, rival = $3, local_visitante = $4, jornada = $5,
+                              resultado_propio = $6, resultado_rival = $7, jugado = $8, escudo_rival = $9,
+                              competicion = $10, competicion_id = $11
+         WHERE id = $12`,
+        [
+          fh.fecha, fh.hora, rival, localVisitante, jornada || null,
+          resultadoPropio ?? null, resultadoRival ?? null, jugado, escudoRival,
+          nombreCompeticion, competicionId, existente[0].id,
+        ]
+      );
+      actualizados++;
+    } else {
+      await pool.query(
+        `INSERT INTO partidos (equipo_id, temporada_id, fecha, hora, rival, local_visitante, jornada,
+                                resultado_propio, resultado_rival, jugado, escudo_rival, id_externo, fuente_externa,
+                                competicion, competicion_id, creado_por)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'rffm', $13, $14, $15)`,
+        [
+          equipoId, temporadaId, fh.fecha, fh.hora, rival, localVisitante, jornada || null,
+          resultadoPropio ?? null, resultadoRival ?? null, jugado, escudoRival, idExterno,
+          nombreCompeticion, competicionId, usuarioId,
+        ]
+      );
+      creados++;
+    }
+  }
+
+  // Limpieza: cualquier partido que ya tuviéramos guardado de esta misma
+  // fuente (RFFM) para este equipo y temporada, y que esta importación
+  // NO ha vuelto a encontrar, se borra. Esto es lo que permite reparar
+  // solo con "volver a importar" los partidos duplicados/con rival
+  // inventado que dejó una importación anterior con el reconocimiento de
+  // rival equivocado (por ejemplo, antes de este arreglo).
+  let eliminados = 0;
+  if (idsValidosDeEstaImportacion.length > 0) {
+    const { rowCount } = await pool.query(
+      `DELETE FROM partidos
+        WHERE equipo_id = $1 AND temporada_id = $2 AND fuente_externa = 'rffm'
+          AND NOT (id_externo = ANY($3::text[]))`,
+      [equipoId, temporadaId, idsValidosDeEstaImportacion]
+    );
+    eliminados = rowCount;
+  }
+
+  await pool.query('UPDATE equipos SET calendario_externo_url = $1 WHERE id = $2', [url, equipoId]);
+
+  return {
+    ok: true,
+    totalEncontrados: partidosEncontrados.length,
+    partidosCreados: creados,
+    partidosActualizados: actualizados,
+    partidosIgnorados: ignorados,
+    partidosEliminados: eliminados,
+    competicionNombre: nombreCompeticion,
+    rivalesSinReconocer: rivalesSinReconocer.slice(0, 10),
+    muestraClaves: Object.keys(partidosEncontrados[0] || {}),
+  };
+}
+
 // POST /api/partidos/importar-calendario - trae el calendario de un
 // equipo desde una URL de RFFM y crea/actualiza sus partidos. body:
 // { equipoId, temporadaId, url }. Guarda la url en el equipo para poder
-// re-sincronizar más adelante con un clic. Requiere que el equipo tenga
+// re-sincronizar más adelante con un clic (o automáticamente, ver
+// sincronizarTodosLosCalendarios más abajo). Requiere que el equipo tenga
 // rellenado "nombreClubCompeticion" (cómo nos llama la RFFM, ej. "AD
 // Nuevo Baztán") para poder distinguir dentro de cada partido cuál de
 // los dos equipos somos nosotros y cuál es el rival.
@@ -908,160 +1141,81 @@ router.post('/importar-calendario', autenticar, async (req, res) => {
     const autorizado = await usuarioEsPersonalDelEquipo(usuarioId, equipoId);
     if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
   }
-  let urlValida;
   try {
-    urlValida = new URL(url);
-  } catch {
-    return res.status(400).json({ error: 'La URL no es válida' });
-  }
-  if (!/(^|\.)rffm\.es$/.test(urlValida.hostname)) {
-    return res.status(400).json({ error: 'Por ahora solo se admite un enlace de calendario de rffm.es' });
-  }
-
-  try {
-    const { rows: equipoRows } = await pool.query('SELECT nombre_club_competicion FROM equipos WHERE id = $1', [equipoId]);
-    if (!equipoRows[0]) return res.status(404).json({ error: 'Equipo no encontrado' });
-    const nombreClub = equipoRows[0].nombre_club_competicion;
-    if (!nombreClub) {
-      return res.status(400).json({
-        error: 'A este equipo le falta el "nombre del club en la competición" (cómo os llama la RFFM, ej. "AD Nuevo Baztán"). '
-          + 'Rellénalo en la ficha del equipo antes de importar, para poder distinguir el rival en cada partido.',
-      });
-    }
-    const clavePropia = clavesIdentificativas(nombreClub);
-
-    let respuesta;
-    try {
-      respuesta = await fetch(urlValida.toString(), {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-          Accept: 'text/html',
-        },
-      });
-    } catch (err) {
-      return res.status(502).json({ error: `No se ha podido contactar con la RFFM: ${err.message}` });
-    }
-    if (!respuesta.ok) {
-      return res.status(502).json({ error: `La RFFM ha respondido con un error (${respuesta.status}) para ese enlace` });
-    }
-    const html = await respuesta.text();
-    const datos = extraerNextData(html);
-    if (!datos) {
-      return res.status(502).json({
-        error: 'La página se ha podido descargar pero no se ha encontrado el bloque de datos esperado (__NEXT_DATA__). '
-          + 'Puede que la RFFM haya cambiado el formato de su web.',
-      });
-    }
-    const partidosEncontrados = extraerPartidosDeCalendarRFFM(datos) || buscarArrayDePartidos(datos);
-    if (!partidosEncontrados || partidosEncontrados.length === 0) {
-      return res.status(502).json({
-        error: 'Se ha leído la página pero no se ha reconocido ningún partido dentro de sus datos. '
-          + 'Asegúrate de que el enlace es el de la página de RFFM DESPUÉS de elegir la competición y el grupo '
-          + 'y pulsar "BUSCAR" (la URL debe llevar al final algo como "?temporada=...&tipojuego=...&competicion=...&grupo=..."); '
-          + 'el enlace genérico de "Calendario" sin esos parámetros no lleva partidos. '
-          + 'Si el enlace ya los lleva, puede que la RFFM haya cambiado el formato de su web.',
-      });
-    }
-
-    let creados = 0;
-    let actualizados = 0;
-    let ignorados = 0;
-    const rivalesSinReconocer = [];
-    const idsValidosDeEstaImportacion = [];
-
-    for (const p of partidosEncontrados) {
-      const nombreLocal = textoDeCampo(buscarCampo(p, ALIAS_LOCAL));
-      const nombreVisitante = textoDeCampo(buscarCampo(p, ALIAS_VISITANTE));
-      const fh = parsearFechaHoraFlexible(buscarCampo(p, ALIAS_FECHA), buscarCampo(p, ALIAS_HORA));
-      if (!nombreLocal || !nombreVisitante || !fh) { ignorados++; continue; }
-
-      const localEsNuestro = esNuestroEquipo(nombreLocal, clavePropia);
-      const visitanteEsNuestro = esNuestroEquipo(nombreVisitante, clavePropia);
-      if (localEsNuestro === visitanteEsNuestro) {
-        // o no aparecemos en ninguno de los dos lados, o (raro) en los dos - no se puede decidir el rival
-        rivalesSinReconocer.push(`${nombreLocal} - ${nombreVisitante}`);
-        ignorados++;
-        continue;
-      }
-      const localVisitante = localEsNuestro ? 'local' : 'visitante';
-      const rival = localEsNuestro ? nombreVisitante : nombreLocal;
-      const escudoRival = localEsNuestro
-        ? urlDeCampo(buscarCampo(p, ALIAS_ESCUDO_VISITANTE))
-        : urlDeCampo(buscarCampo(p, ALIAS_ESCUDO_LOCAL));
-
-      const golesLocal = buscarCampo(p, ALIAS_GOLES_LOCAL);
-      const golesVisitante = buscarCampo(p, ALIAS_GOLES_VISITANTE);
-      const resultadoPropio = localEsNuestro ? golesLocal : golesVisitante;
-      const resultadoRival = localEsNuestro ? golesVisitante : golesLocal;
-      const jugado = resultadoPropio !== null && resultadoPropio !== undefined
-        && resultadoRival !== null && resultadoRival !== undefined;
-
-      const idExterno = String(buscarCampo(p, ALIAS_ID) ?? `${fh.fecha}-${nombreLocal}-${nombreVisitante}`).slice(0, 150);
-      const jornada = textoDeCampo(buscarCampo(p, ALIAS_JORNADA));
-      idsValidosDeEstaImportacion.push(idExterno);
-
-      const { rows: existente } = await pool.query(
-        `SELECT id FROM partidos WHERE equipo_id = $1 AND fuente_externa = 'rffm' AND id_externo = $2`,
-        [equipoId, idExterno]
-      );
-      if (existente[0]) {
-        await pool.query(
-          `UPDATE partidos SET fecha = $1, hora = $2, rival = $3, local_visitante = $4, jornada = $5,
-                                resultado_propio = $6, resultado_rival = $7, jugado = $8, escudo_rival = $9
-           WHERE id = $10`,
-          [
-            fh.fecha, fh.hora, rival, localVisitante, jornada || null,
-            resultadoPropio ?? null, resultadoRival ?? null, jugado, escudoRival, existente[0].id,
-          ]
-        );
-        actualizados++;
-      } else {
-        await pool.query(
-          `INSERT INTO partidos (equipo_id, temporada_id, fecha, hora, rival, local_visitante, jornada,
-                                  resultado_propio, resultado_rival, jugado, escudo_rival, id_externo, fuente_externa, creado_por)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'rffm', $13)`,
-          [
-            equipoId, temporadaId, fh.fecha, fh.hora, rival, localVisitante, jornada || null,
-            resultadoPropio ?? null, resultadoRival ?? null, jugado, escudoRival, idExterno, usuarioId,
-          ]
-        );
-        creados++;
-      }
-    }
-
-    // Limpieza: cualquier partido que ya tuviéramos guardado de esta misma
-    // fuente (RFFM) para este equipo y temporada, y que esta importación
-    // NO ha vuelto a encontrar, se borra. Esto es lo que permite reparar
-    // solo con "volver a importar" los partidos duplicados/con rival
-    // inventado que dejó una importación anterior con el reconocimiento de
-    // rival equivocado (por ejemplo, antes de este arreglo).
-    let eliminados = 0;
-    if (idsValidosDeEstaImportacion.length > 0) {
-      const { rowCount } = await pool.query(
-        `DELETE FROM partidos
-          WHERE equipo_id = $1 AND temporada_id = $2 AND fuente_externa = 'rffm'
-            AND NOT (id_externo = ANY($3::text[]))`,
-        [equipoId, temporadaId, idsValidosDeEstaImportacion]
-      );
-      eliminados = rowCount;
-    }
-
-    await pool.query('UPDATE equipos SET calendario_externo_url = $1 WHERE id = $2', [url, equipoId]);
-
-    res.json({
-      ok: true,
-      totalEncontrados: partidosEncontrados.length,
-      partidosCreados: creados,
-      partidosActualizados: actualizados,
-      partidosIgnorados: ignorados,
-      partidosEliminados: eliminados,
-      rivalesSinReconocer: rivalesSinReconocer.slice(0, 10),
-      muestraClaves: Object.keys(partidosEncontrados[0] || {}),
-    });
+    const resultado = await importarCalendarioParaEquipo(equipoId, temporadaId, url, usuarioId);
+    res.json(resultado);
   } catch (err) {
+    if (err instanceof ErrorImportacion) return res.status(err.status).json({ error: err.message });
     console.error(err);
     res.status(500).json({ error: 'Error al importar el calendario' });
   }
 });
+
+// Vuelve a importar el calendario de TODOS los equipos que ya tengan una
+// URL de RFFM guardada (la que deja "importar-calendario" cada vez que se
+// usa desde la ficha). Se usa tanto desde el botón manual "Actualizar
+// todos los calendarios" como desde la sincronización automática en
+// segundo plano. Secuencial y con una pequeña pausa entre equipos para no
+// bombardear la web de la RFFM con peticiones simultáneas.
+async function sincronizarTodosLosCalendarios(usuarioId) {
+  const { rows: equiposConUrl } = await pool.query(
+    `SELECT id, nombre, temporada_id, calendario_externo_url
+       FROM equipos
+      WHERE calendario_externo_url IS NOT NULL AND calendario_externo_url <> ''`
+  );
+  const resultados = [];
+  for (const eq of equiposConUrl) {
+    try {
+      const resultado = await importarCalendarioParaEquipo(eq.id, eq.temporada_id, eq.calendario_externo_url, usuarioId);
+      resultados.push({ equipoId: eq.id, equipoNombre: eq.nombre, ok: true, ...resultado });
+    } catch (err) {
+      const mensaje = err instanceof ErrorImportacion ? err.message : (err.message || 'Error inesperado');
+      resultados.push({ equipoId: eq.id, equipoNombre: eq.nombre, ok: false, error: mensaje });
+    }
+    // pausa cortés entre equipo y equipo (no aplica tras el último)
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  return resultados;
+}
+
+// POST /api/partidos/sincronizar-todos - botón manual de "actualizar
+// ahora" para dirección deportiva/administración: relanza la importación
+// de todos los equipos con URL de RFFM guardada, de golpe.
+router.post('/sincronizar-todos', autenticar, requiereRol(...GESTION_DEPORTIVA), async (req, res) => {
+  try {
+    const resultados = await sincronizarTodosLosCalendarios(req.usuario.id);
+    res.json({ ok: true, resultados });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al sincronizar los calendarios' });
+  }
+});
+
+// Sincronización automática en segundo plano: para que los resultados y
+// próximos partidos de TODOS los equipos se mantengan al día sin que
+// nadie tenga que acordarse de pulsar "importar" cada semana. Se lanza
+// una vez poco después de arrancar el servidor (por si acaba de haber un
+// despliegue) y luego cada pocas horas mientras el proceso siga vivo. No
+// hace falta ninguna pieza nueva de infraestructura (cron del sistema,
+// servicio aparte...): con que el proceso de Node seguir arrancado dentro
+// del contenedor Docker vale, que es como ya funciona NUBAPP en producción.
+const INTERVALO_SINCRONIZACION_MS = 6 * 60 * 60 * 1000; // cada 6 horas
+function iniciarSincronizacionAutomatica() {
+  async function ejecutar() {
+    try {
+      const resultados = await sincronizarTodosLosCalendarios(null);
+      const ok = resultados.filter((r) => r.ok).length;
+      const conError = resultados.length - ok;
+      console.log(`[calendario RFFM] Sincronización automática: ${resultados.length} equipo(s) con URL, ${ok} ok, ${conError} con error.`);
+      resultados.filter((r) => !r.ok).forEach((r) => console.log(`[calendario RFFM]   - ${r.equipoNombre}: ${r.error}`));
+    } catch (err) {
+      console.error('[calendario RFFM] Fallo inesperado en la sincronización automática:', err);
+    }
+  }
+  setTimeout(ejecutar, 2 * 60 * 1000); // primera pasada 2 min después de arrancar
+  setInterval(ejecutar, INTERVALO_SINCRONIZACION_MS);
+}
+
+router.iniciarSincronizacionAutomatica = iniciarSincronizacionAutomatica;
 
 module.exports = router;
