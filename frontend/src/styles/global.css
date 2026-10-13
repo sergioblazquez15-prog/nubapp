@@ -195,12 +195,26 @@ button:disabled {
   color: #d9d2c0;
 }
 
+.marca-club {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 18px;
+}
+
+.escudo-barra-navegacion {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .barra-navegacion .marca {
   font-weight: 800;
   color: var(--color-primario);
   letter-spacing: 0.5px;
   font-size: 17px;
-  padding: 6px 10px 18px;
+  padding: 0;
 }
 
 .barra-navegacion nav {

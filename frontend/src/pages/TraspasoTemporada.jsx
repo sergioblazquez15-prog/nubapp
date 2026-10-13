@@ -11,6 +11,7 @@ export default function TraspasoTemporada() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [paso, setPaso] = useState(0);
+  const [mostrarGestion, setMostrarGestion] = useState(false);
 
   const [origenId, setOrigenId] = useState('');
   const [nombreNueva, setNombreNueva] = useState('');
@@ -21,9 +22,15 @@ export default function TraspasoTemporada() {
   const [resultado, setResultado] = useState(null);
   const [enviando, setEnviando] = useState(false);
 
-  useEffect(() => {
-    api.get('/temporadas').then((lista) => {
+  function cargarTemporadas() {
+    return api.get('/temporadas').then((lista) => {
       setTemporadas(lista);
+      return lista;
+    });
+  }
+
+  useEffect(() => {
+    cargarTemporadas().then((lista) => {
       const principal = lista.find((t) => t.esPrincipal) || lista[0];
       if (principal) {
         setOrigenId(principal.id);
@@ -69,8 +76,17 @@ export default function TraspasoTemporada() {
 
   return (
     <div className="pantalla-traspaso">
-      <h1>Traspaso de temporada</h1>
+      <div className="cabecera">
+        <h1>Traspaso de temporada</h1>
+        <button onClick={() => setMostrarGestion((v) => !v)}>
+          {mostrarGestion ? 'Cancelar' : '🗓️ Gestionar temporadas'}
+        </button>
+      </div>
       <p className="subtitulo">Cierra la temporada actual y prepara la siguiente sin perder ningún dato.</p>
+
+      {mostrarGestion && (
+        <GestionTemporadas temporadas={temporadas} onCambio={cargarTemporadas} />
+      )}
 
       <div className="pasos-traspaso" style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '16px 0 20px' }}>
         {nombresPasos.map((n, i) => (
@@ -151,5 +167,143 @@ export default function TraspasoTemporada() {
         </div>
       )}
     </div>
+  );
+}
+
+// Lista todas las temporadas con corrección de nombre/fechas (por si hubo
+// un typo al crearlas), más las dos acciones que ya existían en el
+// backend pero no tenían ningún botón en la pantalla: marcar como
+// principal (la que se propone al crear equipos nuevos) y cerrarla
+// (pasa a ser de solo lectura, histórico).
+function GestionTemporadas({ temporadas, onCambio }) {
+  const [editandoId, setEditandoId] = useState(null);
+  const [error, setError] = useState('');
+  const [procesandoId, setProcesandoId] = useState(null);
+
+  async function guardarEdicion(id, datos) {
+    setError('');
+    try {
+      await api.put(`/temporadas/${id}`, datos);
+      setEditandoId(null);
+      await onCambio();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function marcarPrincipal(id) {
+    setError('');
+    setProcesandoId(id);
+    try {
+      await api.put(`/temporadas/${id}/principal`);
+      await onCambio();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setProcesandoId(null);
+    }
+  }
+
+  async function cerrarTemporada(id, nombre) {
+    if (!confirm(`¿Cerrar "${nombre}"? Pasará a ser de solo lectura (histórico). No se puede deshacer desde aquí.`)) return;
+    setError('');
+    setProcesandoId(id);
+    try {
+      await api.put(`/temporadas/${id}/cerrar`);
+      await onCambio();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setProcesandoId(null);
+    }
+  }
+
+  return (
+    <div className="tarjeta" style={{ marginBottom: 20 }}>
+      <h2 style={{ marginTop: 0 }}>Temporadas existentes</h2>
+      {error && <p className="error">{error}</p>}
+      <table className="tabla-usuarios">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Inicio</th>
+            <th>Fin</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {temporadas.map((t) => (
+            <tr key={t.id}>
+              {editandoId === t.id ? (
+                <td colSpan={5}>
+                  <FormularioEditarTemporada
+                    temporada={t}
+                    onGuardar={(datos) => guardarEdicion(t.id, datos)}
+                    onCancelar={() => setEditandoId(null)}
+                  />
+                </td>
+              ) : (
+                <>
+                  <td>{t.nombre}</td>
+                  <td>{t.fechaInicio?.slice(0, 10)}</td>
+                  <td>{t.fechaFin?.slice(0, 10)}</td>
+                  <td>
+                    {t.esPrincipal && <span className="etiqueta-suave etiqueta-color-1">Principal</span>}
+                    {t.cerrada && <span className="etiqueta-suave">Cerrada</span>}
+                    {!t.esPrincipal && !t.cerrada && <span className="nota">—</span>}
+                  </td>
+                  <td className="acciones-fila">
+                    <button onClick={() => setEditandoId(t.id)}>✎ Editar</button>
+                    {!t.esPrincipal && !t.cerrada && (
+                      <button disabled={procesandoId === t.id} onClick={() => marcarPrincipal(t.id)}>
+                        Marcar como principal
+                      </button>
+                    )}
+                    {!t.cerrada && (
+                      <button className="boton-peligro" disabled={procesandoId === t.id} onClick={() => cerrarTemporada(t.id, t.nombre)}>
+                        Cerrar temporada
+                      </button>
+                    )}
+                  </td>
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FormularioEditarTemporada({ temporada, onGuardar, onCancelar }) {
+  const [nombre, setNombre] = useState(temporada.nombre || '');
+  const [fechaInicio, setFechaInicio] = useState(temporada.fechaInicio?.slice(0, 10) || '');
+  const [fechaFin, setFechaFin] = useState(temporada.fechaFin?.slice(0, 10) || '');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!nombre.trim() || !fechaInicio || !fechaFin) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onGuardar({ nombre: nombre.trim(), fechaInicio, fechaFin });
+    } catch (err) {
+      setError(err.message);
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="barra-filtros" onSubmit={manejarEnvio} style={{ flexWrap: 'wrap' }}>
+      <input value={nombre} onChange={(e) => setNombre(e.target.value)} required />
+      <input type="date" value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} required />
+      <input type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} required />
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={enviando}>{enviando ? 'Guardando…' : 'Guardar'}</button>
+      <button type="button" onClick={onCancelar} disabled={enviando}>Cancelar</button>
+    </form>
   );
 }

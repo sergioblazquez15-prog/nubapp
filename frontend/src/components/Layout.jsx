@@ -9,6 +9,7 @@
 // administración/dirección deportiva (datos económicos y de cuentas).
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import escudoAdnb from '../assets/escudo-adnb.png';
 
 const PERSONAL_TECNICO = ['administrador', 'direccion_deportiva', 'coordinador', 'entrenador'];
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
@@ -34,7 +35,10 @@ export function Layout() {
   return (
     <div className="app-shell">
       <header className="barra-navegacion">
-        <span className="marca">NUBAPP</span>
+        <div className="marca-club">
+          <img src={escudoAdnb} alt="Escudo AD Nuevo Baztán" className="escudo-barra-navegacion" />
+          <span className="marca">NUBAPP</span>
+        </div>
         <nav>
           <EnlaceNav to="/" icono="🏠">Inicio</EnlaceNav>
 

@@ -220,10 +220,95 @@ function FormularioEjercicio({ onCrear }) {
   );
 }
 
+// Corrige los datos de un ejercicio YA creado — el deporte al que
+// pertenece no se puede cambiar aquí a propósito (es la clave por la que
+// se organiza el banco de ejercicios de cada disciplina).
+function FormularioEditarEjercicio({ ejercicio, onGuardar }) {
+  const [campos, setCampos] = useState({
+    titulo: ejercicio.titulo || '',
+    descripcion: ejercicio.descripcion || '',
+    tipologia: ejercicio.tipologia || '',
+    naturaleza: ejercicio.naturaleza || '',
+    categoriaEdad: ejercicio.categoriaEdad || '',
+    espacio: ejercicio.espacio || '',
+    numJugadores: ejercicio.numJugadores || '',
+    duracionMin: ejercicio.duracionMin || '',
+  });
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  function actualizar(campo, valor) {
+    setCampos((actuales) => ({ ...actuales, [campo]: valor }));
+  }
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!campos.titulo) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onGuardar({
+        ...campos,
+        duracionMin: campos.duracionMin ? Number(campos.duracionMin) : null,
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ marginBottom: 16 }}>
+      <label>
+        Título
+        <input value={campos.titulo} onChange={(e) => actualizar('titulo', e.target.value)} required />
+      </label>
+      <label>
+        Descripción
+        <input value={campos.descripcion} onChange={(e) => actualizar('descripcion', e.target.value)} />
+      </label>
+      <label>
+        Naturaleza
+        <select value={campos.naturaleza} onChange={(e) => actualizar('naturaleza', e.target.value)}>
+          <option value="">Sin indicar</option>
+          {NATURALEZAS.map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </label>
+      <label>
+        Tipología
+        <input
+          list="tipologias-sugeridas" value={campos.tipologia}
+          onChange={(e) => actualizar('tipologia', e.target.value)}
+        />
+      </label>
+      <label>
+        Categoría de edad (ej: +U11)
+        <input value={campos.categoriaEdad} onChange={(e) => actualizar('categoriaEdad', e.target.value)} />
+      </label>
+      <label>
+        Espacio (ej: Medio campo)
+        <input value={campos.espacio} onChange={(e) => actualizar('espacio', e.target.value)} />
+      </label>
+      <label>
+        Nº de jugadores (ej: 11-19)
+        <input value={campos.numJugadores} onChange={(e) => actualizar('numJugadores', e.target.value)} />
+      </label>
+      <label>
+        Duración (minutos)
+        <input type="number" min="0" value={campos.duracionMin} onChange={(e) => actualizar('duracionMin', e.target.value)} />
+      </label>
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={enviando}>{enviando ? 'Guardando…' : 'Guardar cambios'}</button>
+    </form>
+  );
+}
+
 function DetalleEjercicio({ ejercicioId, onVolver, onEliminar }) {
   const [ejercicio, setEjercicio] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
+  const [editando, setEditando] = useState(false);
 
   async function cargar() {
     setCargando(true);
@@ -267,6 +352,14 @@ function DetalleEjercicio({ ejercicioId, onVolver, onEliminar }) {
     cargar();
   }
 
+  // Corrige los datos de un ejercicio ya creado (p.ej. un typo en el
+  // título o la duración) — por si te equivocas al darlo de alta.
+  async function guardarEdicionEjercicio(datos) {
+    await api.put(`/ejercicios/${ejercicioId}`, datos);
+    setEditando(false);
+    cargar();
+  }
+
   if (cargando) return <p className="cargando">Cargando…</p>;
   if (error) return <p className="error">{error}</p>;
   if (!ejercicio) return null;
@@ -280,9 +373,12 @@ function DetalleEjercicio({ ejercicioId, onVolver, onEliminar }) {
         <h1>{ejercicio.titulo}</h1>
         <div className="acciones-fila">
           <BotonInforme titulo={`ejercicio ${ejercicio.titulo}`} />
+          <button onClick={() => setEditando((v) => !v)}>{editando ? 'Cancelar' : '✎ Editar datos'}</button>
           <button className="boton-peligro" onClick={onEliminar}>Eliminar ejercicio</button>
         </div>
       </div>
+
+      {editando && <FormularioEditarEjercicio ejercicio={ejercicio} onGuardar={guardarEdicionEjercicio} />}
 
       {ejercicio.descripcion && <p>{ejercicio.descripcion}</p>}
       <p className="nota">

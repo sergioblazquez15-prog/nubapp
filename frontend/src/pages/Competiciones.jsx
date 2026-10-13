@@ -22,6 +22,7 @@ export default function Competiciones() {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [editandoId, setEditandoId] = useState(null);
 
   useEffect(() => {
     api.get('/temporadas').then((lista) => {
@@ -70,6 +71,12 @@ export default function Competiciones() {
     cargar();
   }
 
+  async function guardarEdicion(id, datos) {
+    await api.put(`/competiciones/${id}`, datos);
+    setEditandoId(null);
+    cargar();
+  }
+
   return (
     <div className="pantalla-competiciones">
       <div className="cabecera">
@@ -114,14 +121,25 @@ export default function Competiciones() {
         <div className="tarjetas-dashboard">
           {competiciones.map((c) => (
             <div key={c.id} className="tarjeta tarjeta-dashboard tarjeta-competicion">
-              <div className="cabecera-competicion">
-                <h3>{c.nombre}</h3>
-                <span className={`etiqueta-suave ${CLASES_TIPO[c.tipo] || ''}`}>{ETIQUETAS_TIPO[c.tipo] || c.tipo}</span>
-              </div>
-              {puedeGestionar && (
-                <button className="boton-peligro" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={() => eliminar(c.id)}>
-                  Eliminar
-                </button>
+              {editandoId === c.id ? (
+                <FormularioEditarCompeticion
+                  competicion={c}
+                  onGuardar={(datos) => guardarEdicion(c.id, datos)}
+                  onCancelar={() => setEditandoId(null)}
+                />
+              ) : (
+                <>
+                  <div className="cabecera-competicion">
+                    <h3>{c.nombre}</h3>
+                    <span className={`etiqueta-suave ${CLASES_TIPO[c.tipo] || ''}`}>{ETIQUETAS_TIPO[c.tipo] || c.tipo}</span>
+                  </div>
+                  {puedeGestionar && (
+                    <div className="acciones-fila" style={{ marginTop: 4 }}>
+                      <button onClick={() => setEditandoId(c.id)}>✎ Editar</button>
+                      <button className="boton-peligro" onClick={() => eliminar(c.id)}>Eliminar</button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ))}
@@ -169,6 +187,49 @@ function FormularioCompeticion({ onCrear }) {
       </label>
       {error && <p className="error">{error}</p>}
       <button type="submit" disabled={enviando}>{enviando ? 'Creando…' : 'Crear competición'}</button>
+    </form>
+  );
+}
+
+function FormularioEditarCompeticion({ competicion, onGuardar, onCancelar }) {
+  const [nombre, setNombre] = useState(competicion.nombre || '');
+  const [tipo, setTipo] = useState(competicion.tipo || 'liga');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!nombre.trim()) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onGuardar({ nombre: nombre.trim(), tipo });
+    } catch (err) {
+      setError(err.message);
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form onSubmit={manejarEnvio}>
+      <label>
+        Nombre
+        <input value={nombre} onChange={(e) => setNombre(e.target.value)} required />
+      </label>
+      <label>
+        Tipo
+        <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+          <option value="liga">Liga</option>
+          <option value="copa">Copa</option>
+          <option value="torneo">Torneo</option>
+          <option value="amistoso">Amistoso</option>
+        </select>
+      </label>
+      {error && <p className="error">{error}</p>}
+      <div className="acciones-fila" style={{ marginTop: 4 }}>
+        <button type="submit" disabled={enviando}>{enviando ? 'Guardando…' : 'Guardar'}</button>
+        <button type="button" onClick={onCancelar} disabled={enviando}>Cancelar</button>
+      </div>
     </form>
   );
 }

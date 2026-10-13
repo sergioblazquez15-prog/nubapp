@@ -52,6 +52,34 @@ router.post('/', autenticar, requiereRol(...GESTION_DEPORTIVA), async (req, res)
   }
 });
 
+// PUT /api/temporadas/:id - corrige nombre/fechas de una temporada ya
+// creada (p.ej. un typo en el nombre o una fecha mal puesta al crearla).
+// Todo lo que se da de alta en NUBAPP debe poder corregirse después, así
+// que esto evita tener que borrar y recrear la temporada (lo que
+// perdería los equipos/plantillas que ya colgaran de ella).
+router.put('/:id', autenticar, requiereRol(...GESTION_DEPORTIVA), async (req, res) => {
+  const { nombre, fechaInicio, fechaFin } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE temporadas SET
+         nombre       = COALESCE($1, nombre),
+         fecha_inicio = COALESCE($2, fecha_inicio),
+         fecha_fin    = COALESCE($3, fecha_fin)
+       WHERE id = $4
+       RETURNING id`,
+      [nombre || null, fechaInicio || null, fechaFin || null, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Temporada no encontrada' });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Ya existe una temporada con ese nombre' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar la temporada' });
+  }
+});
+
 // Marca esta temporada como la principal (la que se propone por defecto
 // al crear equipos nuevos) y se la quita a las demás.
 router.put('/:id/principal', autenticar, requiereRol(...GESTION_DEPORTIVA), async (req, res) => {

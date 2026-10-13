@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext';
 import { colorEtiqueta } from '../utils/colorEtiqueta';
 import { POSICIONES_FUTBOL, POSICIONES_BALONCESTO, nombrePosicion, EsquemaPosiciones } from '../components/EsquemaPosiciones';
 import { BotonInforme, CabeceraInforme } from '../components/Informe';
+import ImportarPlantillaExcel from '../components/ImportarPlantillaExcel';
 
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
 const ROLES_PERSONAL = ['entrenador', 'coordinador', 'monitor'];
@@ -23,6 +24,7 @@ function iconoDeporte(nombre) {
 export default function Equipos() {
   const { tieneRol } = useAuth();
   const puedeGestionar = tieneRol(...GESTION_DEPORTIVA);
+  const esAdministrador = tieneRol('administrador');
 
   const [equipos, setEquipos] = useState([]);
   const [deportes, setDeportes] = useState([]);
@@ -31,6 +33,8 @@ export default function Equipos() {
   const [error, setError] = useState('');
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [mostrarTraspaso, setMostrarTraspaso] = useState(false);
+  const [mostrarImportar, setMostrarImportar] = useState(false);
+  const [mostrarDeportes, setMostrarDeportes] = useState(false);
   const [equipoAbiertoId, setEquipoAbiertoId] = useState(null);
 
   const [filtros, setFiltros] = useState({ temporadaId: '', deporteId: '', estado: 'activo' });
@@ -51,8 +55,12 @@ export default function Equipos() {
     }
   }
 
-  useEffect(() => {
+  function recargarDeportes() {
     api.get('/deportes').then(setDeportes).catch(() => {});
+  }
+
+  useEffect(() => {
+    recargarDeportes();
     api.get('/temporadas').then((lista) => {
       setTemporadas(lista);
       const principal = lista.find((t) => t.esPrincipal);
@@ -84,6 +92,15 @@ export default function Equipos() {
     return resultado;
   }
 
+  async function importarExcel(archivo, temporadaId) {
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+    formData.append('temporadaId', temporadaId);
+    const resultado = await api.postFile('/deportistas/importar', formData);
+    cargarEquipos();
+    return resultado;
+  }
+
   if (equipoAbiertoId) {
     return (
       <EquipoDetalle
@@ -111,9 +128,23 @@ export default function Equipos() {
             <button onClick={() => { setMostrarFormulario((v) => !v); setMostrarTraspaso(false); }}>
               {mostrarFormulario ? 'Cancelar' : '+ Nuevo equipo'}
             </button>
+            {esAdministrador && (
+              <button onClick={() => setMostrarImportar((v) => !v)}>
+                {mostrarImportar ? 'Cancelar' : '📊 Importar plantilla (Excel)'}
+              </button>
+            )}
+            {esAdministrador && (
+              <button onClick={() => setMostrarDeportes((v) => !v)}>
+                {mostrarDeportes ? 'Cancelar' : '🏅 Gestionar deportes'}
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {mostrarDeportes && (
+        <GestionDeportes onCambio={recargarDeportes} />
+      )}
 
       <div className="barra-filtros">
         <select value={filtros.temporadaId} onChange={(e) => actualizarFiltro('temporadaId', e.target.value)}>
@@ -161,6 +192,10 @@ export default function Equipos() {
         />
       )}
 
+      {mostrarImportar && (
+        <ImportarPlantillaExcel temporadas={temporadas} onImportar={importarExcel} />
+      )}
+
       {cargando ? (
         <p className="cargando">Cargando…</p>
       ) : equipos.length === 0 ? (
@@ -205,6 +240,181 @@ export default function Equipos() {
         </div>
       )}
     </div>
+  );
+}
+
+// Catálogo de deportes del club (fútbol, baloncesto, muay thai...) — solo
+// administrador. Incluye los dados de baja (?estado=todos) para poder
+// reactivarlos; el "tipo" (equipo/individual) no se puede tocar una vez
+// creado, a propósito (ver comentario en backend/src/routes/deportes.js).
+function GestionDeportes({ onCambio }) {
+  const [deportes, setDeportes] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState('');
+  const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [editandoId, setEditandoId] = useState(null);
+
+  async function cargar() {
+    setCargando(true);
+    try {
+      setDeportes(await api.get('/deportes?estado=todos'));
+      setError('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  useEffect(() => {
+    cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function crear(datos) {
+    await api.post('/deportes', datos);
+    setMostrarFormulario(false);
+    cargar();
+    onCambio?.();
+  }
+
+  async function guardarEdicion(id, datos) {
+    await api.put(`/deportes/${id}`, datos);
+    setEditandoId(null);
+    cargar();
+    onCambio?.();
+  }
+
+  async function alternarActivo(deporte) {
+    if (deporte.activo && !confirm(`¿Dar de baja "${deporte.nombre}"? Deja de verse en los selectores para altas nuevas.`)) return;
+    await api.put(`/deportes/${deporte.id}`, { activo: !deporte.activo });
+    cargar();
+    onCambio?.();
+  }
+
+  return (
+    <div className="tarjeta" style={{ marginBottom: 16 }}>
+      <div className="acciones-fila" style={{ marginBottom: 8 }}>
+        <h3 style={{ margin: 0 }}>Deportes del club</h3>
+        <button onClick={() => setMostrarFormulario((v) => !v)}>
+          {mostrarFormulario ? 'Cancelar' : '+ Nuevo deporte'}
+        </button>
+      </div>
+
+      {error && <p className="error">{error}</p>}
+
+      {mostrarFormulario && <FormularioDeporte onCrear={crear} />}
+
+      {cargando ? (
+        <p className="cargando">Cargando…</p>
+      ) : (
+        <table className="tabla-usuarios">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Tipo</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {deportes.map((d) => (
+              <tr key={d.id} className={!d.activo ? 'fila-inactiva' : ''}>
+                {editandoId === d.id ? (
+                  <td colSpan={4}>
+                    <FormularioEditarDeporte
+                      deporte={d}
+                      onGuardar={(datos) => guardarEdicion(d.id, datos)}
+                      onCancelar={() => setEditandoId(null)}
+                    />
+                  </td>
+                ) : (
+                  <>
+                    <td>{d.nombre}</td>
+                    <td>{d.tipo === 'equipo' ? 'De equipo' : 'Individual'}</td>
+                    <td>
+                      <span className={`badge-estado ${d.activo ? 'badge-activo' : 'badge-inactivo'}`}>
+                        {d.activo ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td className="acciones-fila">
+                      <button onClick={() => setEditandoId(d.id)}>✎ Editar nombre</button>
+                      <button className={d.activo ? 'boton-peligro' : ''} onClick={() => alternarActivo(d)}>
+                        {d.activo ? 'Dar de baja' : 'Reactivar'}
+                      </button>
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function FormularioDeporte({ onCrear }) {
+  const [nombre, setNombre] = useState('');
+  const [tipo, setTipo] = useState('equipo');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!nombre.trim()) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onCrear({ nombre: nombre.trim(), tipo });
+      setNombre('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="barra-filtros" onSubmit={manejarEnvio} style={{ marginBottom: 12 }}>
+      <input placeholder="Nombre (ej: Pádel)" value={nombre} onChange={(e) => setNombre(e.target.value)} required />
+      <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+        <option value="equipo">De equipo (necesita plantilla)</option>
+        <option value="individual">Individual (solo asistencia)</option>
+      </select>
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={enviando}>{enviando ? 'Creando…' : 'Crear deporte'}</button>
+    </form>
+  );
+}
+
+// Solo el nombre es editable aquí — el tipo (equipo/individual) no, a
+// propósito: ver comentario en backend/src/routes/deportes.js.
+function FormularioEditarDeporte({ deporte, onGuardar, onCancelar }) {
+  const [nombre, setNombre] = useState(deporte.nombre || '');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!nombre.trim()) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onGuardar({ nombre: nombre.trim() });
+    } catch (err) {
+      setError(err.message);
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="barra-filtros" onSubmit={manejarEnvio}>
+      <input value={nombre} onChange={(e) => setNombre(e.target.value)} required />
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={enviando}>{enviando ? 'Guardando…' : 'Guardar'}</button>
+      <button type="button" onClick={onCancelar} disabled={enviando}>Cancelar</button>
+    </form>
   );
 }
 
@@ -350,12 +560,61 @@ function FormularioEquipo({ deportes, temporadas, onCreado }) {
   );
 }
 
+// Corrige nombre/categoría/club de un equipo YA creado — a propósito no
+// deja tocar el deporte ni la temporada (cambiar eso con plantilla/
+// partidos/sesiones ya colgando sería demasiado delicado); si se eligió
+// mal cualquiera de esos dos, lo normal es dar de baja este equipo y
+// crear uno nuevo correcto.
+function FormularioEditarEquipo({ equipo, onGuardar, onCancelar }) {
+  const [nombre, setNombre] = useState(equipo.nombre || '');
+  const [categoria, setCategoria] = useState(equipo.categoria || '');
+  const [clubNombre, setClubNombre] = useState(equipo.clubNombre || '');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!nombre.trim()) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onGuardar({ nombre: nombre.trim(), categoria: categoria.trim() || null, clubNombre: clubNombre.trim() || null });
+    } catch (err) {
+      setError(err.message);
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 560, marginBottom: 16 }}>
+      <label>
+        Nombre del equipo
+        <input value={nombre} onChange={(e) => setNombre(e.target.value)} required />
+      </label>
+      <label>
+        Categoría (opcional)
+        <input value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Ej: Cadete, Regional A" />
+      </label>
+      <label>
+        Club / rival habitual (opcional)
+        <input value={clubNombre} onChange={(e) => setClubNombre(e.target.value)} />
+      </label>
+      {error && <p className="error">{error}</p>}
+      <div className="acciones-fila">
+        <button type="submit" disabled={enviando}>{enviando ? 'Guardando…' : 'Guardar cambios'}</button>
+        <button type="button" onClick={onCancelar} disabled={enviando}>Cancelar</button>
+      </div>
+    </form>
+  );
+}
+
 function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
   const [equipo, setEquipo] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [usuariosDisponibles, setUsuariosDisponibles] = useState(null); // null = no consultado / sin permiso
   const [deportistasDisponibles, setDeportistasDisponibles] = useState([]);
+  const [editandoEquipo, setEditandoEquipo] = useState(false);
 
   async function cargarEquipo() {
     setCargando(true);
@@ -414,6 +673,12 @@ function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
     cargarEquipo();
   }
 
+  async function guardarDatosEquipo(datos) {
+    await api.put(`/equipos/${equipoId}`, datos);
+    setEditandoEquipo(false);
+    cargarEquipo();
+  }
+
   if (cargando) return <p className="cargando">Cargando…</p>;
   if (error) return <p className="error">{error}</p>;
   if (!equipo) return null;
@@ -440,9 +705,18 @@ function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
           </div>
         </div>
         <div className="acciones-fila" style={{ marginLeft: 'auto' }}>
+          {puedeGestionar && (
+            <button onClick={() => setEditandoEquipo((v) => !v)}>
+              {editandoEquipo ? 'Cancelar' : '✎ Editar equipo'}
+            </button>
+          )}
           <BotonInforme titulo={`plantilla ${equipo.nombre}`} />
         </div>
       </div>
+
+      {editandoEquipo && (
+        <FormularioEditarEquipo equipo={equipo} onGuardar={guardarDatosEquipo} onCancelar={() => setEditandoEquipo(false)} />
+      )}
 
       <div className="bloque-ficha">
         <h2>🧑‍🏫 Personal del equipo</h2>
@@ -877,6 +1151,7 @@ export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [mostrarRecuperacion, setMostrarRecuperacion] = useState(false);
   const [sesionAbiertaId, setSesionAbiertaId] = useState(null);
+  const [sesionEditandoId, setSesionEditandoId] = useState(null);
 
   async function cargar() {
     setCargando(true);
@@ -930,6 +1205,14 @@ export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
     if (!confirm('¿Eliminar esta sesión? Se borra también la asistencia registrada.')) return;
     if (sesionAbiertaId === sesionId) setSesionAbiertaId(null);
     await api.delete(`/sesiones/${sesionId}`);
+    cargar();
+  }
+
+  // Corrige fecha/hora/título de una sesión ya creada (p.ej. un typo o una
+  // hora mal puesta al crearla) — por si te equivocas al darla de alta.
+  async function guardarEdicionSesion(sesionId, datos) {
+    await api.put(`/sesiones/${sesionId}`, datos);
+    setSesionEditandoId(null);
     cargar();
   }
 
@@ -1014,10 +1297,29 @@ export function AsistenciaEquipo({ equipoId, temporadaId, puedeGestionar }) {
                         </button>
                       )}
                       {puedeGestionar && (
+                        <button
+                          className="boton-lesion"
+                          onClick={() => setSesionEditandoId(sesionEditandoId === s.id ? null : s.id)}
+                        >
+                          {sesionEditandoId === s.id ? 'Cerrar edición' : '✎ Editar'}
+                        </button>
+                      )}
+                      {puedeGestionar && (
                         <button className="boton-peligro" onClick={() => eliminarSesion(s.id)}>Eliminar</button>
                       )}
                     </td>
                   </tr>
+                  {sesionEditandoId === s.id && (
+                    <tr>
+                      <td colSpan={4}>
+                        <FormularioEditarSesion
+                          sesion={s}
+                          onGuardar={(datos) => guardarEdicionSesion(s.id, datos)}
+                          onCancelar={() => setSesionEditandoId(null)}
+                        />
+                      </td>
+                    </tr>
+                  )}
                   {sesionAbiertaId === s.id && (
                     <tr>
                       <td colSpan={4}>
@@ -1094,6 +1396,45 @@ function FormularioSesion({ onCrear }) {
 
       <button type="submit" disabled={enviando}>{enviando ? 'Creando…' : 'Crear sesión'}</button>
       {error && <p className="error">{error}</p>}
+    </form>
+  );
+}
+
+// Corrige fecha/hora/título de una sesión YA creada, por si hubo un error
+// al darla de alta — el estado (cancelada/recuperación) sigue gestionándose
+// con sus propios botones, para no mezclar aquí dos acciones distintas.
+function FormularioEditarSesion({ sesion, onGuardar, onCancelar }) {
+  const [fecha, setFecha] = useState(sesion.fecha?.slice(0, 10) || '');
+  const [horaInicio, setHoraInicio] = useState(sesion.horaInicio?.slice(0, 5) || '');
+  const [titulo, setTitulo] = useState(sesion.titulo || '');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!fecha) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onGuardar({ fecha, horaInicio: horaInicio || null, titulo: titulo.trim() || null });
+    } catch (err) {
+      setError(err.message);
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 460, marginBottom: 12 }}>
+      <div className="barra-filtros">
+        <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
+        <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
+      </div>
+      <input placeholder="Título (opcional)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+      {error && <p className="error">{error}</p>}
+      <div className="acciones-fila">
+        <button type="submit" disabled={enviando}>{enviando ? 'Guardando…' : 'Guardar cambios'}</button>
+        <button type="button" onClick={onCancelar} disabled={enviando}>Cancelar</button>
+      </div>
     </form>
   );
 }

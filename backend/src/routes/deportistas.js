@@ -567,9 +567,15 @@ router.put('/:id/lesion', autenticar, async (req, res) => {
 // "plantilla_deportistas_nubapp.xlsx", entregada aparte con el mismo
 // formato que se espera aquí). Una fila = un deportista en UN equipo; si
 // practica varios deportes, se repite con el mismo Nº de socio. Por Nº de
-// socio: si ya existe, ACTUALIZA la ficha; si no, la CREA. Opcionalmente
-// (columnas "Email acceso Mi app" + "Contraseña inicial") crea también su
-// login propio, igual que POST /:id/acceso — por eso solo administrador.
+// socio: si ya existe, ACTUALIZA la ficha; si no, la CREA.
+//
+// Además, cada deportista importado que todavía no tenga acceso propio
+// recibe uno de forma AUTOMÁTICA (login a "Mi app"), igual que
+// POST /:id/acceso — por eso este endpoint es solo para administrador. Las
+// columnas "Email acceso Mi app" y "Contraseña inicial" son opcionales: si
+// se rellenan se usan tal cual; si no, se genera un email y/o una
+// contraseña provisionales que se devuelven en la respuesta (detalleAccesos)
+// para que el administrador se los pueda comunicar a la familia.
 const subidaExcelDeportistas = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 function normalizarTextoImport(txt) {
@@ -638,6 +644,16 @@ function parsearFechaNacimientoImport(valorCelda) {
   return null;
 }
 
+// Genera una contraseña inicial cuando la fila no trae una válida (o no
+// trae ninguna) - formato fácil de transcribir a mano (sin caracteres
+// ambiguos como 0/O o 1/l/I), 10 caracteres.
+function generarPasswordAleatoria() {
+  const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let resultado = '';
+  for (let i = 0; i < 10; i++) resultado += caracteres[Math.floor(Math.random() * caracteres.length)];
+  return resultado;
+}
+
 // POST /api/deportistas/importar - multipart: campo "archivo" (el Excel)
 // + temporadaId (a qué temporada se asignan los equipos de cada fila).
 router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDeportistas.single('archivo'), async (req, res) => {
@@ -676,6 +692,7 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
   const creados = [];
   const actualizados = [];
   const accesosCreados = [];
+  let accesosExistentes = 0;
   const errores = [];
 
   for (let i = numeroFilaCabecera + 1; i <= hoja.rowCount; i++) {
@@ -795,38 +812,61 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
       if (esNuevo) creados.push(`${nombre} ${apellidos} (Nº ${numeroSocio})`);
       else actualizados.push(`${nombre} ${apellidos} (Nº ${numeroSocio})`);
 
-      // Acceso opcional a "Mi app" - solo si se ha rellenado el email Y
-      // el deportista no tenía ya uno (igual que POST /:id/acceso, no se
-      // sobrescribe sin más un acceso existente).
-      if (emailAcceso) {
-        const { rows: actual } = await pool.query('SELECT usuario_id FROM deportistas WHERE id = $1', [deportistaId]);
-        if (actual[0]?.usuario_id) {
-          errores.push(`${etiquetaFila}: ya tenía acceso propio a Mi app, no se ha tocado (cámbialo desde su ficha si hace falta)`);
-        } else if (!passwordInicial || passwordInicial.length < 8) {
-          errores.push(`${etiquetaFila}: para crear el acceso a Mi app falta "Contraseña inicial" (mínimo 8 caracteres)`);
-        } else {
-          const clienteAcceso = await pool.connect();
-          try {
-            await clienteAcceso.query('BEGIN');
-            const passwordHash = await bcrypt.hash(passwordInicial, RONDAS_BCRYPT);
-            const emailFinal = emailAcceso.toLowerCase().trim();
-            const { rows: nuevoUsuario } = await clienteAcceso.query(
-              'INSERT INTO usuarios (email, password_hash, nombre_completo) VALUES ($1, $2, $3) RETURNING id',
-              [emailFinal, passwordHash, `${nombre} ${apellidos}`]
-            );
-            const usuarioId = nuevoUsuario[0].id;
-            const { rows: rolDeportista } = await clienteAcceso.query(`SELECT id FROM roles WHERE nombre = 'deportista'`);
-            await clienteAcceso.query('INSERT INTO usuario_roles (usuario_id, rol_id) VALUES ($1, $2)', [usuarioId, rolDeportista[0].id]);
-            await clienteAcceso.query('UPDATE deportistas SET usuario_id = $1 WHERE id = $2', [usuarioId, deportistaId]);
-            await clienteAcceso.query('COMMIT');
-            accesosCreados.push(`${nombre} ${apellidos} (${emailFinal})`);
-          } catch (err) {
-            await clienteAcceso.query('ROLLBACK');
-            if (err.code === '23505') errores.push(`${etiquetaFila}: ya existe un usuario con el email "${emailAcceso}"`);
-            else { console.error(err); errores.push(`${etiquetaFila}: error inesperado al crear el acceso a Mi app`); }
-          } finally {
-            clienteAcceso.release();
+      // Acceso a "Mi app": se crea SIEMPRE para cada deportista importado
+      // que todavía no tuviera uno (si ya lo tenía, no se toca, para no
+      // perder sin querer la cuenta anterior - igual que POST /:id/acceso).
+      // Si la fila no trae email/contraseña, o la contraseña no es válida,
+      // se generan automáticamente para que el acceso se cree de todas
+      // formas; el email y la contraseña finales (los de la fila o los
+      // generados) se devuelven siempre en el resultado para poder
+      // comunicárselos a la familia, porque la contraseña generada no
+      // queda guardada en ningún otro sitio (solo su hash).
+      const { rows: actual } = await pool.query('SELECT usuario_id FROM deportistas WHERE id = $1', [deportistaId]);
+      if (actual[0]?.usuario_id) {
+        accesosExistentes++;
+      } else {
+        let emailFinal = emailAcceso ? emailAcceso.toLowerCase().trim() : '';
+        if (!emailFinal) {
+          emailFinal = `socio${numeroSocio}`.toLowerCase().replace(/[^a-z0-9]/g, '') + '@adnb-nubapp.es';
+        }
+        let passwordFinal = passwordInicial;
+        let passwordGenerada = false;
+        if (!passwordFinal || passwordFinal.length < 8) {
+          passwordFinal = generarPasswordAleatoria();
+          passwordGenerada = true;
+        }
+
+        const clienteAcceso = await pool.connect();
+        try {
+          await clienteAcceso.query('BEGIN');
+          const passwordHash = await bcrypt.hash(passwordFinal, RONDAS_BCRYPT);
+          const { rows: nuevoUsuario } = await clienteAcceso.query(
+            'INSERT INTO usuarios (email, password_hash, nombre_completo) VALUES ($1, $2, $3) RETURNING id',
+            [emailFinal, passwordHash, `${nombre} ${apellidos}`]
+          );
+          const usuarioId = nuevoUsuario[0].id;
+          const { rows: rolDeportista } = await clienteAcceso.query(`SELECT id FROM roles WHERE nombre = 'deportista'`);
+          await clienteAcceso.query('INSERT INTO usuario_roles (usuario_id, rol_id) VALUES ($1, $2)', [usuarioId, rolDeportista[0].id]);
+          await clienteAcceso.query('UPDATE deportistas SET usuario_id = $1 WHERE id = $2', [usuarioId, deportistaId]);
+          await clienteAcceso.query('COMMIT');
+          accesosCreados.push({
+            nombre: `${nombre} ${apellidos}`,
+            numeroSocio,
+            email: emailFinal,
+            password: passwordFinal,
+            passwordGenerada,
+            emailGenerado: !emailAcceso,
+          });
+        } catch (err) {
+          await clienteAcceso.query('ROLLBACK');
+          if (err.code === '23505') {
+            errores.push(`${etiquetaFila}: ya existe un usuario con el email "${emailFinal}" (usa otro email en "Email acceso Mi app" para esta fila)`);
+          } else {
+            console.error(err);
+            errores.push(`${etiquetaFila}: error inesperado al crear el acceso a Mi app`);
           }
+        } finally {
+          clienteAcceso.release();
         }
       }
     } catch (err) {
@@ -844,6 +884,7 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
     creados: creados.length,
     actualizados: actualizados.length,
     accesosCreados: accesosCreados.length,
+    accesosExistentes,
     detalleCreados: creados,
     detalleActualizados: actualizados,
     detalleAccesos: accesosCreados,

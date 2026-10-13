@@ -15,6 +15,7 @@ import { colorEtiqueta, iniciales } from '../utils/colorEtiqueta';
 import { EsquemaPosiciones, catalogoPosicionesPara, nombrePosicion } from '../components/EsquemaPosiciones';
 import { BotonInforme, CabeceraInforme } from '../components/Informe';
 import { CalendarioDeportista } from '../components/CalendarioDeportista';
+import ImportarPlantillaExcel from '../components/ImportarPlantillaExcel';
 
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
 
@@ -161,7 +162,7 @@ export default function Deportistas() {
       {error && <p className="error">{error}</p>}
 
       {mostrarImportar && (
-        <ImportarExcelDeportistas temporadas={temporadas} onImportar={importarExcel} />
+        <ImportarPlantillaExcel temporadas={temporadas} onImportar={importarExcel} />
       )}
 
       {mostrarFormulario && (
@@ -409,89 +410,8 @@ function FormularioDeportista({ deportesDisponibles, onCreado }) {
 }
 
 // ---------- acceso propio del deportista a "Mi app" (solo administrador) ----------
-
-// Sube el Excel de plantillas (ver POST /deportistas/importar en el
-// backend, y la plantilla oficial que se entrega aparte): una fila por
-// deportista y equipo/deporte - crea o actualiza la ficha por Nº de
-// socio, lo asigna al equipo de la temporada elegida y, si se rellenan
-// las columnas de acceso, le crea también su login de "Mi app".
-function ImportarExcelDeportistas({ temporadas, onImportar }) {
-  const [temporadaId, setTemporadaId] = useState('');
-  const [archivo, setArchivo] = useState(null);
-  const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState('');
-  const [resultado, setResultado] = useState(null);
-
-  useEffect(() => {
-    if (temporadaId || temporadas.length === 0) return;
-    const principal = temporadas.find((t) => t.esPrincipal) || temporadas[0];
-    if (principal) setTemporadaId(principal.id);
-  }, [temporadas, temporadaId]);
-
-  async function manejarEnvio(evento) {
-    evento.preventDefault();
-    if (!temporadaId || !archivo) return;
-    setError('');
-    setResultado(null);
-    setEnviando(true);
-    try {
-      const r = await onImportar(archivo, temporadaId);
-      setResultado(r);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  return (
-    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 620 }}>
-      <p className="nota">
-        Sube la plantilla oficial rellena (una fila por deportista y equipo/deporte — si practica
-        varios, una fila por cada uno con el mismo Nº de socio). Por Nº de socio: si ya existe en
-        NUBAPP se ACTUALIZA su ficha, si no existe se CREA. El equipo/deporte de cada fila se busca
-        en la temporada que elijas aquí abajo. Si rellenas "Email acceso Mi app" y "Contraseña
-        inicial" también se le crea su acceso propio a la app (solo si no lo tenía ya).
-      </p>
-      <label>
-        Temporada (a la que se asignan los equipos de la plantilla)
-        <select value={temporadaId} onChange={(e) => setTemporadaId(e.target.value)} required>
-          <option value="" disabled>Selecciona una temporada…</option>
-          {temporadas.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-        </select>
-      </label>
-      <label>
-        Archivo Excel (.xlsx)
-        <input
-          type="file"
-          accept=".xlsx"
-          onChange={(e) => setArchivo(e.target.files?.[0] || null)}
-          required
-        />
-      </label>
-      {error && <p className="error">{error}</p>}
-      {resultado && (
-        <div className="nota" style={{ background: 'var(--color-superficie-alt)', padding: 10, borderRadius: 8 }}>
-          <p style={{ margin: 0 }}>
-            {resultado.creados} deportista(s) nuevo(s) · {resultado.actualizados} actualizado(s)
-            {resultado.accesosCreados > 0 && ` · ${resultado.accesosCreados} acceso(s) a Mi app creados`}
-          </p>
-          {resultado.errores?.length > 0 && (
-            <>
-              <p style={{ margin: '8px 0 4px' }} className="texto-peligro">
-                {resultado.errores.length} fila(s) con avisos o errores:
-              </p>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {resultado.errores.map((e, i) => <li key={i}>{e}</li>)}
-              </ul>
-            </>
-          )}
-        </div>
-      )}
-      <button type="submit" disabled={enviando}>{enviando ? 'Importando…' : 'Importar'}</button>
-    </form>
-  );
-}
+// (el formulario de importación de plantillas por Excel vive ahora en
+// components/ImportarPlantillaExcel.jsx, compartido con Equipos y Usuarios)
 
 function AccesoApp({ deportista, onCambio }) {
   const [mostrarForm, setMostrarForm] = useState(false);
