@@ -28,6 +28,7 @@ function filaAEquipo(fila) {
     calendarioExternoUrl: fila.calendario_externo_url,
     nombreClubCompeticion: fila.nombre_club_competicion,
     inactivo: fila.inactivo,
+    tokenAlta: fila.token_alta,
     numeroDeportistas: fila.numero_deportistas !== undefined ? Number(fila.numero_deportistas) : undefined,
   };
 }
@@ -144,6 +145,23 @@ router.get('/:id', autenticar, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al consultar el equipo' });
+  }
+});
+
+// POST /api/equipos/:id/token-alta/regenerar - genera un enlace de alta
+// nuevo para este equipo (invalida el anterior, por si se ha compartido
+// por error o ya no quieres que se pueda usar más).
+router.post('/:id/token-alta/regenerar', autenticar, requiereRol(...GESTION_DEPORTIVA), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'UPDATE equipos SET token_alta = uuid_generate_v4() WHERE id = $1 RETURNING token_alta',
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Equipo no encontrado' });
+    res.json({ tokenAlta: rows[0].token_alta });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al regenerar el enlace' });
   }
 });
 
@@ -396,6 +414,206 @@ router.put('/:id/deportistas/:deportistaId/ficha-tecnica', autenticar, async (re
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al guardar la ficha técnica' });
+  }
+});
+
+// --- Horario de entrenamiento y generación de sesiones -----------------
+//
+// Un equipo (fútbol, baloncesto...) puede tener un horario semanal de
+// TODO el equipo (deportistaId vacío). Un deporte individual (pádel...)
+// se organiza igual en "equipos" (grupos/categorías), pero cada
+// deportista puede tener su propio día/hora dentro de ese grupo
+// (deportistaId relleno) — por eso ambos casos viven en la misma tabla y
+// los mismos endpoints. Lo define el club (administrador, dirección
+// deportiva, coordinador o el entrenador/monitor asignado a ESE equipo),
+// nunca el deportista. Ver README del horario en el frontend para el
+// botón "Generar sesiones", que es manual (no se generan solas).
+
+// GET /api/equipos/:id/horarios
+router.get('/:id/horarios', autenticar, async (req, res) => {
+  const { roles, id: usuarioId } = req.usuario;
+  try {
+    if (!roles.some((r) => GESTION_DEPORTIVA.includes(r))) {
+      const autorizado = await usuarioEsPersonalDelEquipo(usuarioId, req.params.id);
+      if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+    const { rows } = await pool.query(
+      `SELECT h.id, h.dia_semana AS "diaSemana", h.hora_inicio AS "horaInicio", h.titulo,
+         h.deportista_id AS "deportistaId", d.nombre AS "deportistaNombre", d.apellidos AS "deportistaApellidos"
+       FROM horarios_entrenamiento h
+       LEFT JOIN deportistas d ON d.id = h.deportista_id
+       WHERE h.equipo_id = $1
+       ORDER BY h.dia_semana, h.hora_inicio`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al consultar el horario' });
+  }
+});
+
+// POST /api/equipos/:id/horarios - { diaSemana (1=lunes..7=domingo),
+// horaInicio, titulo, deportistaId (opcional, para el horario propio de
+// un deportista de un deporte individual) }
+router.post('/:id/horarios', autenticar, async (req, res) => {
+  const { roles, id: usuarioId } = req.usuario;
+  const { diaSemana, horaInicio, titulo, deportistaId } = req.body;
+
+  if (!diaSemana || diaSemana < 1 || diaSemana > 7 || !horaInicio) {
+    return res.status(400).json({ error: 'Día de la semana (1-7) y hora son obligatorios' });
+  }
+
+  try {
+    if (!roles.some((r) => GESTION_DEPORTIVA.includes(r))) {
+      const autorizado = await usuarioEsPersonalDelEquipo(usuarioId, req.params.id);
+      if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+    if (deportistaId) {
+      const { rows: enEquipo } = await pool.query(
+        'SELECT 1 FROM deportista_equipo_temporada WHERE equipo_id = $1 AND deportista_id = $2',
+        [req.params.id, deportistaId]
+      );
+      if (!enEquipo[0]) return res.status(400).json({ error: 'Ese deportista no está en la plantilla de este equipo' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO horarios_entrenamiento (equipo_id, deportista_id, dia_semana, hora_inicio, titulo)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [req.params.id, deportistaId || null, diaSemana, horaInicio, titulo || null]
+    );
+    res.status(201).json({ id: rows[0].id });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: deportistaId ? 'Ese deportista ya tiene ese día/hora en su horario' : 'El equipo ya tiene ese día/hora en su horario' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Error al guardar el horario' });
+  }
+});
+
+// DELETE /api/equipos/horarios/:horarioId
+router.delete('/horarios/:horarioId', autenticar, async (req, res) => {
+  const { roles, id: usuarioId } = req.usuario;
+  try {
+    const { rows: actual } = await pool.query(
+      'SELECT equipo_id FROM horarios_entrenamiento WHERE id = $1',
+      [req.params.horarioId]
+    );
+    if (!actual[0]) return res.status(404).json({ error: 'Horario no encontrado' });
+    if (!roles.some((r) => GESTION_DEPORTIVA.includes(r))) {
+      const autorizado = await usuarioEsPersonalDelEquipo(usuarioId, actual[0].equipo_id);
+      if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+    await pool.query('DELETE FROM horarios_entrenamiento WHERE id = $1', [req.params.horarioId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al eliminar el horario' });
+  }
+});
+
+// Día ISO (1=lunes...7=domingo) de una fecha "YYYY-MM-DD", calculado en
+// UTC para no arrastrar líos de huso horario/horario de verano.
+function diaIsoDeFecha(fechaIso) {
+  const d = new Date(`${fechaIso}T00:00:00Z`);
+  const dow = d.getUTCDay(); // 0=domingo...6=sábado
+  return dow === 0 ? 7 : dow;
+}
+
+// POST /api/equipos/:id/horarios/generar-sesiones - { desde, hasta }
+// Crea una sesión por cada combinación (fecha que caiga en ese día de la
+// semana) x (franja del horario de este equipo), saltándose las que ya
+// existan (mismo equipo + fecha + hora + deportista) para que se pueda
+// repetir sin duplicar nada. Las que caigan en un día marcado como
+// festivo PARA ESTE EQUIPO se crean ya canceladas.
+router.post('/:id/horarios/generar-sesiones', autenticar, async (req, res) => {
+  const { roles, id: usuarioId } = req.usuario;
+  const equipoId = req.params.id;
+  const { desde, hasta } = req.body;
+
+  if (!desde || !hasta || desde > hasta) {
+    return res.status(400).json({ error: 'Indica una fecha "desde" y una "hasta" válidas (desde <= hasta)' });
+  }
+  const dias = (new Date(`${hasta}T00:00:00Z`) - new Date(`${desde}T00:00:00Z`)) / 86400000;
+  if (dias > 400) {
+    return res.status(400).json({ error: 'El rango es demasiado grande (máximo ~400 días de una vez)' });
+  }
+
+  try {
+    if (!roles.some((r) => GESTION_DEPORTIVA.includes(r))) {
+      const autorizado = await usuarioEsPersonalDelEquipo(usuarioId, equipoId);
+      if (!autorizado) return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+
+    const { rows: equipo } = await pool.query('SELECT temporada_id FROM equipos WHERE id = $1', [equipoId]);
+    if (!equipo[0]) return res.status(404).json({ error: 'Equipo no encontrado' });
+
+    const { rows: horarios } = await pool.query(
+      'SELECT dia_semana AS "diaSemana", hora_inicio AS "horaInicio", titulo, deportista_id AS "deportistaId" FROM horarios_entrenamiento WHERE equipo_id = $1',
+      [equipoId]
+    );
+    if (horarios.length === 0) {
+      return res.status(400).json({ error: 'Este equipo todavía no tiene ningún horario configurado' });
+    }
+
+    const { rows: existentes } = await pool.query(
+      'SELECT fecha, hora_inicio AS "horaInicio", solo_deportista_id AS "soloDeportistaId" FROM sesiones WHERE equipo_id = $1 AND fecha BETWEEN $2 AND $3',
+      [equipoId, desde, hasta]
+    );
+    const clavesExistentes = new Set(
+      existentes.map((s) => `${s.fecha.toISOString().slice(0, 10)}|${s.horaInicio || ''}|${s.soloDeportistaId || ''}`)
+    );
+
+    const { rows: festivosEquipo } = await pool.query(
+      `SELECT f.fecha, f.descripcion FROM festivo_equipos fe
+       JOIN festivos f ON f.id = fe.festivo_id
+       WHERE fe.equipo_id = $1 AND f.fecha BETWEEN $2 AND $3`,
+      [equipoId, desde, hasta]
+    );
+    const festivosPorFecha = new Map(festivosEquipo.map((f) => [f.fecha.toISOString().slice(0, 10), f.descripcion]));
+
+    let creadas = 0;
+    let saltadas = 0;
+    const cliente = await pool.connect();
+    try {
+      await cliente.query('BEGIN');
+      for (let i = 0; i <= dias; i++) {
+        const fecha = new Date(`${desde}T00:00:00Z`);
+        fecha.setUTCDate(fecha.getUTCDate() + i);
+        const fechaIso = fecha.toISOString().slice(0, 10);
+        const diaIso = diaIsoDeFecha(fechaIso);
+
+        for (const h of horarios) {
+          if (h.diaSemana !== diaIso) continue;
+          const clave = `${fechaIso}|${h.horaInicio}|${h.deportistaId || ''}`;
+          if (clavesExistentes.has(clave)) { saltadas++; continue; }
+          const festivoDescripcion = festivosPorFecha.get(fechaIso);
+          await cliente.query(
+            `INSERT INTO sesiones (equipo_id, temporada_id, fecha, hora_inicio, titulo, creado_por,
+               cancelada, motivo_cancelacion, solo_deportista_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              equipoId, equipo[0].temporada_id, fechaIso, h.horaInicio, h.titulo || null, usuarioId,
+              Boolean(festivoDescripcion), festivoDescripcion ? `Festivo: ${festivoDescripcion}` : null,
+              h.deportistaId || null,
+            ]
+          );
+          clavesExistentes.add(clave);
+          creadas++;
+        }
+      }
+      await cliente.query('COMMIT');
+    } catch (err) {
+      await cliente.query('ROLLBACK');
+      throw err;
+    } finally {
+      cliente.release();
+    }
+
+    res.json({ ok: true, creadas, saltadas });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al generar las sesiones' });
   }
 });
 

@@ -17,6 +17,9 @@ const ejerciciosRouter = require('./routes/ejercicios');
 const planificacionesRouter = require('./routes/planificaciones');
 const metodologiaRouter = require('./routes/metodologia');
 const competicionesRouter = require('./routes/competiciones');
+const festivosRouter = require('./routes/festivos');
+const solicitudesRouter = require('./routes/solicitudes');
+const altaPublicaRouter = require('./routes/altaPublica');
 
 const app = express();
 app.use(cors());
@@ -39,6 +42,9 @@ app.use('/api/ejercicios', ejerciciosRouter);
 app.use('/api/planificaciones', planificacionesRouter);
 app.use('/api/metodologia', metodologiaRouter);
 app.use('/api/competiciones', competicionesRouter);
+app.use('/api/festivos', festivosRouter);
+app.use('/api/solicitudes', solicitudesRouter);
+app.use('/api/alta-publica', altaPublicaRouter);
 
 // Mantiene al día en segundo plano los calendarios/resultados de todos los
 // equipos con una URL de RFFM guardada (ver routes/partidos.js) - así no

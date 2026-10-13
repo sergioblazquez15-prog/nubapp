@@ -566,8 +566,11 @@ router.put('/:id/lesion', autenticar, async (req, res) => {
 // El club lleva las plantillas de cada equipo en un Excel (ver
 // "plantilla_deportistas_nubapp.xlsx", entregada aparte con el mismo
 // formato que se espera aquí). Una fila = un deportista en UN equipo; si
-// practica varios deportes, se repite con el mismo Nº de socio. Por Nº de
-// socio: si ya existe, ACTUALIZA la ficha; si no, la CREA.
+// practica varios deportes, se repite con el mismo Nº de socio. El Nº de
+// socio es OPCIONAL: si la fila lo trae, se usa para saber si ya existe
+// (y ACTUALIZA la ficha) o si hay que CREARLA; si no lo trae, se intenta
+// reconocer al deportista por nombre + apellidos + fecha de nacimiento
+// exactos, y si tampoco hay coincidencia se crea sin número de socio.
 //
 // Además, cada deportista importado que todavía no tenga acceso propio
 // recibe uno de forma AUTOMÁTICA (login a "Mi app"), igual que
@@ -672,11 +675,15 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
   const hoja = libro.worksheets.find((h) => normalizarTextoImport(h.name) === 'plantilla') || libro.worksheets[0];
   if (!hoja) return res.status(400).json({ error: 'El Excel no tiene ninguna hoja de datos' });
 
+  // El Nº de socio es opcional: una fila sin él se da de alta igualmente
+  // (o se actualiza si se reconoce al deportista por nombre+apellidos+
+  // fecha de nacimiento, ver más abajo). Lo único imprescindible para
+  // reconocer la plantilla son las columnas de nombre y apellidos.
   let columnas = null;
   let numeroFilaCabecera = 0;
   for (let i = 1; i <= Math.min(hoja.rowCount, 10); i++) {
     const mapa = detectarColumnasImport(hoja.getRow(i));
-    if (mapa.numeroSocio && mapa.nombre && mapa.apellidos) {
+    if (mapa.nombre && mapa.apellidos) {
       columnas = mapa;
       numeroFilaCabecera = i;
       break;
@@ -699,15 +706,15 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
     const fila = hoja.getRow(i);
     const valor = (campo) => (columnas[campo] ? celdaTextoImport(fila.getCell(columnas[campo]).value) : '');
 
-    const numeroSocio = valor('numeroSocio');
+    const numeroSocio = valor('numeroSocio') || null;
     const nombre = valor('nombre');
     const apellidos = valor('apellidos');
     if (!numeroSocio && !nombre && !apellidos) continue; // fila en blanco
 
     const etiquetaFila = `Fila ${i}${nombre || apellidos ? ` (${[nombre, apellidos].filter(Boolean).join(' ')})` : ''}`;
     try {
-      if (!numeroSocio || !nombre || !apellidos) {
-        errores.push(`${etiquetaFila}: faltan datos obligatorios (Nº socio, nombre o apellidos)`);
+      if (!nombre || !apellidos) {
+        errores.push(`${etiquetaFila}: faltan datos obligatorios (nombre o apellidos)`);
         continue;
       }
       const fechaNacimiento = parsearFechaNacimientoImport(columnas.fechaNacimiento ? fila.getCell(columnas.fechaNacimiento).value : null);
@@ -749,10 +756,24 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
       const cliente = await pool.connect();
       try {
         await cliente.query('BEGIN');
-        const { rows: existente } = await cliente.query(
-          'SELECT id, usuario_id FROM deportistas WHERE numero_socio = $1 FOR UPDATE',
-          [numeroSocio]
-        );
+        // Si la fila trae Nº de socio, es el identificador de toda la
+        // vida y se usa tal cual. Si no lo trae, se reconoce al
+        // deportista (para no duplicarlo) por nombre + apellidos + fecha
+        // de nacimiento exactos; si tampoco hay coincidencia, se da de
+        // alta como nuevo, sin número de socio.
+        const { rows: existente } = numeroSocio
+          ? await cliente.query(
+              'SELECT id, usuario_id FROM deportistas WHERE numero_socio = $1 FOR UPDATE',
+              [numeroSocio]
+            )
+          : await cliente.query(
+              `SELECT id, usuario_id FROM deportistas
+               WHERE LOWER(TRIM(nombre)) = LOWER(TRIM($1))
+                 AND LOWER(TRIM(apellidos)) = LOWER(TRIM($2))
+                 AND fecha_nacimiento = $3
+               FOR UPDATE`,
+              [nombre, apellidos, fechaNacimiento]
+            );
         if (existente[0]) {
           deportistaId = existente[0].id;
           await cliente.query(
@@ -809,8 +830,9 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
         cliente.release();
       }
 
-      if (esNuevo) creados.push(`${nombre} ${apellidos} (Nº ${numeroSocio})`);
-      else actualizados.push(`${nombre} ${apellidos} (Nº ${numeroSocio})`);
+      const etiquetaSocio = numeroSocio ? ` (Nº ${numeroSocio})` : '';
+      if (esNuevo) creados.push(`${nombre} ${apellidos}${etiquetaSocio}`);
+      else actualizados.push(`${nombre} ${apellidos}${etiquetaSocio}`);
 
       // Acceso a "Mi app": se crea SIEMPRE para cada deportista importado
       // que todavía no tuviera uno (si ya lo tenía, no se toca, para no
@@ -827,7 +849,16 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
       } else {
         let emailFinal = emailAcceso ? emailAcceso.toLowerCase().trim() : '';
         if (!emailFinal) {
-          emailFinal = `socio${numeroSocio}`.toLowerCase().replace(/[^a-z0-9]/g, '') + '@adnb-nubapp.es';
+          // Con Nº de socio, igual que siempre. Sin él, se construye a
+          // partir del nombre/apellidos + los últimos 6 caracteres del id
+          // de la ficha (ya conocido en este punto) para que sea único
+          // aunque haya varios deportistas con el mismo nombre.
+          emailFinal = numeroSocio
+            ? `socio${numeroSocio}`.toLowerCase().replace(/[^a-z0-9]/g, '') + '@adnb-nubapp.es'
+            : `${nombre}.${apellidos}`
+                .normalize('NFD').replace(/[̀-ͯ]/g, '')
+                .toLowerCase().replace(/[^a-z0-9.]/g, '')
+              + '.' + deportistaId.replace(/-/g, '').slice(-6) + '@adnb-nubapp.es';
         }
         let passwordFinal = passwordInicial;
         let passwordGenerada = false;

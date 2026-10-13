@@ -1,7 +1,8 @@
 // Sube el Excel de plantillas (ver POST /deportistas/importar en el
 // backend, y la plantilla oficial "plantilla_deportistas_nubapp.xlsx" que
 // se entrega aparte): una fila por deportista y equipo/deporte — crea o
-// actualiza la ficha por Nº de socio, lo asigna al equipo de la temporada
+// actualiza la ficha (por Nº de socio si lo trae, o si no por nombre +
+// apellidos + fecha de nacimiento), lo asigna al equipo de la temporada
 // elegida y le crea SIEMPRE su acceso propio a "Mi app" si todavía no lo
 // tenía (generando email y/o contraseña provisionales cuando la fila no
 // los trae, para poder comunicárselos a la familia).
@@ -44,10 +45,12 @@ export default function ImportarPlantillaExcel({ temporadas, onImportar }) {
     <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 680 }}>
       <p className="nota">
         Sube la plantilla oficial rellena (una fila por deportista y equipo/deporte — si practica
-        varios, una fila por cada uno con el mismo Nº de socio). Por Nº de socio: si ya existe en
-        NUBAPP se ACTUALIZA su ficha, si no existe se CREA. El equipo/deporte de cada fila se busca
-        en la temporada que elijas aquí abajo. A cada deportista que todavía no tenga acceso propio
-        a "Mi app" se le crea uno automáticamente — si rellenaste "Email acceso Mi app" y
+        varios, una fila por cada uno). El Nº de socio es opcional: si lo rellenas, sirve para
+        reconocer si ese deportista ya existe en NUBAPP (y ACTUALIZAR su ficha) o hay que CREARLA;
+        si lo dejas en blanco, se intenta reconocer por nombre + apellidos + fecha de nacimiento, y
+        si tampoco hay ninguno igual se crea sin número de socio. El equipo/deporte de cada fila se
+        busca en la temporada que elijas aquí abajo. A cada deportista que todavía no tenga acceso
+        propio a "Mi app" se le crea uno automáticamente — si rellenaste "Email acceso Mi app" y
         "Contraseña inicial" se usan tal cual, y si no, se generan solos (los verás abajo en el
         resultado, apúntalos para dárselos a la familia).
       </p>
@@ -86,7 +89,7 @@ export default function ImportarPlantillaExcel({ temporadas, onImportar }) {
                     {resultado.detalleAccesos.map((a, i) => (
                       <tr key={i}>
                         <td>{a.nombre}</td>
-                        <td>{a.numeroSocio}</td>
+                        <td>{a.numeroSocio || '—'}</td>
                         <td>{a.email}{a.emailGenerado && <span className="nota"> (generado)</span>}</td>
                         <td>{a.password}{a.passwordGenerada && <span className="nota"> (generada)</span>}</td>
                       </tr>

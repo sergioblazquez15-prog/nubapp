@@ -609,6 +609,7 @@ function FormularioEditarEquipo({ equipo, onGuardar, onCancelar }) {
 }
 
 function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
+  const { usuario } = useAuth();
   const [equipo, setEquipo] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -685,6 +686,11 @@ function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
 
   const idsEnPlantilla = new Set(equipo.deportistas.map((d) => d.id));
   const candidatos = deportistasDisponibles.filter((d) => !idsEnPlantilla.has(d.id));
+  // El horario lo puede tocar también el entrenador/monitor asignado a
+  // ESTE equipo en concreto, no solo gestión deportiva (lo pidió Sergio
+  // explícitamente para el horario, a diferencia del resto de la ficha).
+  const esPersonalEquipo = equipo.personal.some((p) => p.usuarioId === usuario?.id);
+  const puedeGestionarHorario = puedeGestionar || esPersonalEquipo;
 
   return (
     <div className="pantalla-equipo-detalle">
@@ -787,10 +793,439 @@ function EquipoDetalle({ equipoId, puedeGestionar, onVolver }) {
         )}
       </div>
 
+      {puedeGestionar && (
+        <div className="bloque-ficha">
+          <EnlaceAltaEquipo equipo={equipo} onCambio={cargarEquipo} />
+        </div>
+      )}
+
+      <div className="bloque-ficha">
+        <HorarioEquipo equipoId={equipoId} plantilla={equipo.deportistas} puedeGestionar={puedeGestionarHorario} />
+      </div>
+
+      {puedeGestionar && (
+        <div className="bloque-ficha">
+          <SolicitudesEquipo equipoId={equipoId} onAprobada={cargarEquipo} />
+        </div>
+      )}
+
       <div className="bloque-ficha">
         <AsistenciaEquipo equipoId={equipoId} temporadaId={equipo.temporadaId} puedeGestionar={puedeGestionar} />
       </div>
     </div>
+  );
+}
+
+// Enlace público para que futuras familias pidan unirse a este equipo
+// sin necesidad de cuenta (ver backend/src/routes/altaPublica.js). El
+// token es fijo (no expira solo), pero se puede regenerar si hiciera
+// falta invalidar el enlace anterior.
+function EnlaceAltaEquipo({ equipo, onCambio }) {
+  const [copiado, setCopiado] = useState(false);
+  const [regenerando, setRegenerando] = useState(false);
+  const [error, setError] = useState('');
+
+  const url = `${window.location.origin}/alta/${equipo.tokenAlta}`;
+
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch {
+      setError('No se ha podido copiar automáticamente; selecciona y copia el enlace a mano.');
+    }
+  }
+
+  async function regenerar() {
+    if (!confirm('¿Generar un enlace nuevo? El anterior dejará de funcionar.')) return;
+    setRegenerando(true);
+    setError('');
+    try {
+      await api.post(`/equipos/${equipo.id}/token-alta/regenerar`);
+      await onCambio();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRegenerando(false);
+    }
+  }
+
+  return (
+    <>
+      <h2>🔗 Enlace de alta para familias</h2>
+      <p className="nota" style={{ marginBottom: 10 }}>
+        Compártelo con quien quiera unirse a este equipo (por WhatsApp, email…). Rellenan sus datos
+        básicos sin necesidad de cuenta y la solicitud os queda pendiente de revisar más abajo, en
+        "Solicitudes de alta".
+      </p>
+      <div className="barra-filtros">
+        <input value={url} readOnly onClick={(e) => e.target.select()} style={{ flex: 1 }} />
+        <button type="button" onClick={copiar}>{copiado ? '✓ Copiado' : 'Copiar enlace'}</button>
+        <button type="button" onClick={regenerar} disabled={regenerando}>
+          {regenerando ? 'Generando…' : 'Regenerar enlace'}
+        </button>
+      </div>
+      {error && <p className="error">{error}</p>}
+    </>
+  );
+}
+
+const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+// Horario semanal de este equipo (franjas para TODO el equipo) y, para
+// deportes individuales como pádel, el horario propio de cada
+// deportista dentro de este grupo. Con el botón "Generar sesiones" se
+// crean las sesiones de verdad para el rango de fechas que se indique
+// (no se generan solas al guardar el horario).
+function HorarioEquipo({ equipoId, plantilla, puedeGestionar }) {
+  const [horarios, setHorarios] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState('');
+  const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [mostrarGenerar, setMostrarGenerar] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
+  async function cargar() {
+    setCargando(true);
+    try {
+      setHorarios(await api.get(`/equipos/${equipoId}/horarios`));
+      setError('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  useEffect(() => {
+    cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [equipoId]);
+
+  async function anadir(datos) {
+    await api.post(`/equipos/${equipoId}/horarios`, datos);
+    setMostrarFormulario(false);
+    cargar();
+  }
+
+  async function eliminar(horarioId) {
+    if (!confirm('¿Quitar esta franja del horario?')) return;
+    await api.delete(`/equipos/horarios/${horarioId}`);
+    cargar();
+  }
+
+  async function generarSesiones(desde, hasta) {
+    const r = await api.post(`/equipos/${equipoId}/horarios/generar-sesiones`, { desde, hasta });
+    setResultado(r);
+    return r;
+  }
+
+  return (
+    <>
+      <h2>📅 Horario y generación de sesiones</h2>
+      <p className="nota" style={{ marginBottom: 10 }}>
+        Define aquí los días y horas de entrenamiento — de todo el equipo, o de un deportista en
+        concreto (para deportes individuales como pádel, donde cada uno puede tener un horario
+        distinto). Luego usa "Generar sesiones" para crear ya las sesiones de verdad en el rango de
+        fechas que quieras.
+      </p>
+      {error && <p className="error">{error}</p>}
+      {cargando ? (
+        <p className="cargando">Cargando…</p>
+      ) : horarios.length === 0 ? (
+        <p className="nota">Todavía no hay ninguna franja de horario configurada.</p>
+      ) : (
+        <ul className="lista-dashboard" style={{ marginBottom: 12 }}>
+          {horarios.map((h) => (
+            <li key={h.id} className="etiquetas-roles" style={{ alignItems: 'center' }}>
+              <span className="etiqueta-suave">
+                {DIAS_SEMANA[h.diaSemana - 1]} {h.horaInicio?.slice(0, 5)}
+                {h.titulo ? ` · ${h.titulo}` : ''}
+                {h.deportistaId ? ` · ${h.deportistaNombre} ${h.deportistaApellidos}` : ' · Todo el equipo'}
+              </span>
+              {puedeGestionar && (
+                <button className="boton-enlace" onClick={() => eliminar(h.id)}>quitar</button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {puedeGestionar && (
+        <div className="acciones-fila" style={{ marginBottom: 12 }}>
+          <button onClick={() => { setMostrarFormulario((v) => !v); setMostrarGenerar(false); }}>
+            {mostrarFormulario ? 'Cancelar' : '+ Añadir franja'}
+          </button>
+          <button className="boton-outline-dorado" onClick={() => { setMostrarGenerar((v) => !v); setMostrarFormulario(false); }}>
+            {mostrarGenerar ? 'Cancelar' : '⚙ Generar sesiones'}
+          </button>
+        </div>
+      )}
+      {mostrarFormulario && <FormularioHorario plantilla={plantilla} onCrear={anadir} />}
+      {mostrarGenerar && <FormularioGenerarSesiones onGenerar={generarSesiones} />}
+      {resultado && (
+        <p className="nota">
+          {resultado.creadas} sesión(es) creada(s){resultado.saltadas > 0 && ` · ${resultado.saltadas} ya existían y no se han duplicado`}.
+        </p>
+      )}
+    </>
+  );
+}
+
+function FormularioHorario({ plantilla, onCrear }) {
+  const [diaSemana, setDiaSemana] = useState(1);
+  const [horaInicio, setHoraInicio] = useState('18:00');
+  const [titulo, setTitulo] = useState('');
+  const [deportistaId, setDeportistaId] = useState('');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    setError('');
+    setEnviando(true);
+    try {
+      await onCrear({ diaSemana: Number(diaSemana), horaInicio, titulo: titulo || undefined, deportistaId: deportistaId || undefined });
+      setTitulo('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 460, marginBottom: 12 }}>
+      <div className="barra-filtros">
+        <select value={diaSemana} onChange={(e) => setDiaSemana(e.target.value)}>
+          {DIAS_SEMANA.map((d, i) => <option key={d} value={i + 1}>{d}</option>)}
+        </select>
+        <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} required />
+      </div>
+      <input placeholder="Título (opcional)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+      <label>
+        ¿Para quién es esta franja?
+        <select value={deportistaId} onChange={(e) => setDeportistaId(e.target.value)}>
+          <option value="">Todo el equipo</option>
+          {plantilla.map((d) => <option key={d.id} value={d.id}>{d.nombre} {d.apellidos}</option>)}
+        </select>
+      </label>
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={enviando}>{enviando ? 'Guardando…' : 'Añadir franja'}</button>
+    </form>
+  );
+}
+
+function FormularioGenerarSesiones({ onGenerar }) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [desde, setDesde] = useState(hoy);
+  const [hasta, setHasta] = useState('');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!desde || !hasta) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onGenerar(desde, hasta);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form className="tarjeta formulario-usuario" onSubmit={manejarEnvio} style={{ maxWidth: 460, marginBottom: 12 }}>
+      <p className="nota" style={{ marginTop: 0 }}>
+        Crea las sesiones de todas las franjas de horario de este equipo entre estas dos fechas
+        (no duplica las que ya existan en esas fechas).
+      </p>
+      <div className="barra-filtros">
+        <label style={{ flex: 1 }}>
+          Desde
+          <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} required />
+        </label>
+        <label style={{ flex: 1 }}>
+          Hasta
+          <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} required />
+        </label>
+      </div>
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={enviando}>{enviando ? 'Generando…' : 'Generar sesiones'}</button>
+    </form>
+  );
+}
+
+// Solicitudes de alta pendientes de ESTE equipo (llegadas por su enlace
+// público). Aprobar pide los datos que la solicitud no trae (fecha de
+// nacimiento es obligatoria en la ficha; el resto, opcional) y crea ya
+// la ficha de deportista fichada en este equipo/temporada.
+function SolicitudesEquipo({ equipoId, onAprobada }) {
+  const [solicitudes, setSolicitudes] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState('');
+  const [aprobandoId, setAprobandoId] = useState(null);
+  const [credenciales, setCredenciales] = useState([]);
+
+  async function cargar() {
+    setCargando(true);
+    try {
+      setSolicitudes(await api.get(`/solicitudes?equipoId=${equipoId}&estado=pendiente`));
+      setError('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  useEffect(() => {
+    cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [equipoId]);
+
+  async function aprobar(solicitud, datos) {
+    const resultado = await api.post(`/solicitudes/${solicitud.id}/aprobar`, datos);
+    setAprobandoId(null);
+    if (resultado.acceso) {
+      setCredenciales((prev) => [
+        ...prev,
+        { nombre: `${solicitud.nombre} ${solicitud.apellidos}`, ...resultado.acceso },
+      ]);
+    }
+    cargar();
+    onAprobada?.();
+  }
+
+  async function rechazar(id) {
+    if (!confirm('¿Rechazar esta solicitud?')) return;
+    await api.post(`/solicitudes/${id}/rechazar`);
+    cargar();
+  }
+
+  return (
+    <>
+      <h2>📨 Solicitudes de alta pendientes</h2>
+      {credenciales.length > 0 && (
+        <div className="nota" style={{ background: 'var(--color-superficie-alt)', padding: 10, borderRadius: 8, marginBottom: 14 }}>
+          <p style={{ margin: '0 0 4px', fontWeight: 600 }}>
+            Acceso a "Mi app" creado — apunta estos datos, no se pueden volver a mostrar:
+          </p>
+          <div className="tabla-scroll">
+            <table className="tabla-usuarios">
+              <thead><tr><th>Deportista</th><th>Email</th><th>Contraseña</th></tr></thead>
+              <tbody>
+                {credenciales.map((c, i) => (
+                  <tr key={i}>
+                    <td>{c.nombre}</td>
+                    <td>{c.email}{c.emailGenerado && <span className="nota"> (generado)</span>}</td>
+                    <td>{c.password}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
+      {cargando ? (
+        <p className="cargando">Cargando…</p>
+      ) : solicitudes.length === 0 ? (
+        <p className="nota">No hay ninguna solicitud pendiente para este equipo.</p>
+      ) : (
+        <ul className="lista-dashboard">
+          {solicitudes.map((s) => (
+            <li key={s.id} className="tarjeta" style={{ marginBottom: 10 }}>
+              {aprobandoId === s.id ? (
+                <FormularioAprobarSolicitud
+                  solicitud={s}
+                  onGuardar={(datos) => aprobar(s, datos)}
+                  onCancelar={() => setAprobandoId(null)}
+                />
+              ) : (
+                <>
+                  <p style={{ margin: 0, fontWeight: 600 }}>{s.nombre} {s.apellidos}</p>
+                  <p className="nota" style={{ margin: '2px 0 8px' }}>
+                    {[s.email, s.telefono].filter(Boolean).join(' · ') || 'Sin contacto indicado'}
+                  </p>
+                  <div className="acciones-fila">
+                    <button onClick={() => setAprobandoId(s.id)}>Aprobar</button>
+                    <button className="boton-peligro" onClick={() => rechazar(s.id)}>Rechazar</button>
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function FormularioAprobarSolicitud({ solicitud, onGuardar, onCancelar }) {
+  const [temporadas, setTemporadas] = useState([]);
+  const [temporadaId, setTemporadaId] = useState('');
+  const [fechaNacimiento, setFechaNacimiento] = useState('');
+  const [numeroSocio, setNumeroSocio] = useState('');
+  const [dni, setDni] = useState('');
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    api.get('/temporadas').then((lista) => {
+      setTemporadas(lista);
+      const principal = lista.find((t) => t.esPrincipal) || lista[0];
+      if (principal) setTemporadaId(principal.id);
+    }).catch(() => {});
+  }, []);
+
+  async function manejarEnvio(evento) {
+    evento.preventDefault();
+    if (!temporadaId || !fechaNacimiento) return;
+    setError('');
+    setEnviando(true);
+    try {
+      await onGuardar({
+        temporadaId, fechaNacimiento,
+        numeroSocio: numeroSocio || undefined,
+        dni: dni || undefined,
+      });
+    } catch (err) {
+      setError(err.message);
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form onSubmit={manejarEnvio}>
+      <p style={{ margin: '0 0 8px', fontWeight: 600 }}>{solicitud.nombre} {solicitud.apellidos}</p>
+      <label>
+        Temporada en la que se ficha
+        <select value={temporadaId} onChange={(e) => setTemporadaId(e.target.value)} required>
+          {temporadas.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+        </select>
+      </label>
+      <label>
+        Fecha de nacimiento
+        <input type="date" value={fechaNacimiento} onChange={(e) => setFechaNacimiento(e.target.value)} required />
+      </label>
+      <label>
+        Nº de socio (opcional)
+        <input value={numeroSocio} onChange={(e) => setNumeroSocio(e.target.value)} />
+      </label>
+      <label>
+        DNI (opcional)
+        <input value={dni} onChange={(e) => setDni(e.target.value)} />
+      </label>
+      {error && <p className="error">{error}</p>}
+      <div className="acciones-fila">
+        <button type="submit" disabled={enviando}>{enviando ? 'Creando ficha y acceso…' : 'Aprobar, crear ficha y dar acceso'}</button>
+        <button type="button" onClick={onCancelar} disabled={enviando}>Cancelar</button>
+      </div>
+    </form>
   );
 }
 

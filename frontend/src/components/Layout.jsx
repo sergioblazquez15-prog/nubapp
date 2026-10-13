@@ -47,10 +47,12 @@ export function Layout() {
               <div className="grupo-nav-titulo">Dirección deportiva</div>
               {veAmplioDireccionDeportiva && <EnlaceNav to="/ejercicios" icono="📋">Base de ejercicios</EnlaceNav>}
               {veAmplioDireccionDeportiva && <EnlaceNav to="/metodologia" icono="🗓️">Planificación general</EnlaceNav>}
-              {veAmplioDireccionDeportiva && <EnlaceNav to="/equipos" icono="⚽">Plantillas</EnlaceNav>}
+              {(veAmplioDireccionDeportiva || tieneRol('monitor')) && <EnlaceNav to="/equipos" icono="⚽">Plantillas</EnlaceNav>}
               {veAmplioDireccionDeportiva && <EnlaceNav to="/partidos" icono="🏟️">Partidos</EnlaceNav>}
               {veFichaYAsistencia && <EnlaceNav to="/deportistas" icono="🧑‍🤝‍🧑">Fichas individuales</EnlaceNav>}
               {veFichaYAsistencia && <EnlaceNav to="/asistencia" icono="✅">Asistencia</EnlaceNav>}
+              {tieneRol(...GESTION_DEPORTIVA) && <EnlaceNav to="/solicitudes-alta" icono="📨">Solicitudes de alta</EnlaceNav>}
+              {tieneRol(...GESTION_DEPORTIVA) && <EnlaceNav to="/festivos" icono="📅">Días festivos</EnlaceNav>}
             </div>
           )}
 

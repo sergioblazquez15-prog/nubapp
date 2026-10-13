@@ -14,15 +14,21 @@ import Competiciones from './pages/Competiciones';
 import Asistencia from './pages/Asistencia';
 import Scout from './pages/Scout';
 import TraspasoTemporada from './pages/TraspasoTemporada';
+import Festivos from './pages/Festivos';
+import SolicitudesAlta from './pages/SolicitudesAlta';
+import AltaPublica from './pages/AltaPublica';
 import { Layout } from './components/Layout';
 import { RutaProtegida } from './components/RutaProtegida';
 import { useAuth } from './auth/AuthContext';
 
 // Perfiles con acceso amplio a "Dirección deportiva" (banco de
-// ejercicios, planificación, plantillas, competición). El monitor queda
-// fuera de este grupo a propósito: su perfil solo entra a Fichas
-// individuales y Asistencia (ver PERSONAL_TECNICO_Y_MONITOR más abajo),
-// nunca a la gestión de equipos ni al banco de ejercicios.
+// ejercicios, planificación, competición). El monitor queda fuera de
+// este grupo a propósito: su perfil solo entra a Fichas individuales,
+// Asistencia y Equipos (ver PERSONAL_TECNICO_Y_MONITOR más abajo) — en
+// Equipos, solo para ver sus propios equipos asignados y gestionar su
+// horario de entrenamiento; nunca para crear/editar equipos, fichar
+// jugadores ni el banco de ejercicios (eso sigue gestionado dentro de
+// Equipos.jsx con el rol real, no con el acceso a la ruta).
 const PERSONAL_TECNICO = ['administrador', 'direccion_deportiva', 'coordinador', 'entrenador'];
 const PERSONAL_TECNICO_Y_MONITOR = [...PERSONAL_TECNICO, 'monitor'];
 const GESTION_DEPORTIVA = ['administrador', 'direccion_deportiva', 'coordinador'];
@@ -44,6 +50,11 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+
+      {/* Enlace público de alta de un equipo (ver botón "Enlace de alta"
+          en la ficha de cada equipo): sin login, fuera del layout con
+          menú, como Login. */}
+      <Route path="/alta/:token" element={<AltaPublica />} />
 
       {/* Directo a pantalla completa: fuera del layout con menú a
           propósito (como Login), para que ocupe toda la pantalla sin la
@@ -96,7 +107,7 @@ export default function App() {
         <Route
           path="/equipos"
           element={
-            <RutaProtegida roles={PERSONAL_TECNICO}>
+            <RutaProtegida roles={PERSONAL_TECNICO_Y_MONITOR}>
               <Equipos />
             </RutaProtegida>
           }
@@ -162,6 +173,22 @@ export default function App() {
           element={
             <RutaProtegida roles={GESTION_DEPORTIVA}>
               <TraspasoTemporada />
+            </RutaProtegida>
+          }
+        />
+        <Route
+          path="/festivos"
+          element={
+            <RutaProtegida roles={GESTION_DEPORTIVA}>
+              <Festivos />
+            </RutaProtegida>
+          }
+        />
+        <Route
+          path="/solicitudes-alta"
+          element={
+            <RutaProtegida roles={GESTION_DEPORTIVA}>
+              <SolicitudesAlta />
             </RutaProtegida>
           }
         />
