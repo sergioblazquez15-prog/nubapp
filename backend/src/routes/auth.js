@@ -19,6 +19,7 @@ router.post('/login', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT u.id, u.email, u.password_hash, u.nombre_completo, u.inactivo,
+              u.debe_cambiar_contrasena,
               d.id AS deportista_id,
               COALESCE(array_agg(r.nombre) FILTER (WHERE r.nombre IS NOT NULL), '{}') AS roles
        FROM usuarios u
@@ -62,6 +63,7 @@ router.post('/login', async (req, res) => {
         nombreCompleto: usuario.nombre_completo,
         roles: usuario.roles,
         deportistaId: usuario.deportista_id,
+        debeCambiarContrasena: usuario.debe_cambiar_contrasena,
       },
     });
   } catch (err) {
@@ -79,6 +81,7 @@ router.get('/yo', require('../middleware/auth').autenticar, (req, res) => {
     nombreCompleto: req.usuario.nombre_completo,
     roles: req.usuario.roles,
     deportistaId: req.usuario.deportistaId,
+    debeCambiarContrasena: req.usuario.debeCambiarContrasena,
   });
 });
 

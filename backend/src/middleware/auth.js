@@ -16,7 +16,8 @@ async function autenticar(req, res, next) {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
 
     const { rows } = await pool.query(
-      `SELECT u.id, u.nombre_completo, u.email, u.inactivo, d.id AS deportista_id,
+      `SELECT u.id, u.nombre_completo, u.email, u.inactivo, u.debe_cambiar_contrasena,
+              d.id AS deportista_id,
               array_agg(r.nombre) AS roles
        FROM usuarios u
        JOIN usuario_roles ur ON ur.usuario_id = u.id
@@ -37,6 +38,7 @@ async function autenticar(req, res, next) {
     // así el enlace "este usuario ES este deportista" queda disponible en
     // cualquier ruta autenticada sin tener que volver a consultarlo.
     usuario.deportistaId = usuario.deportista_id;
+    usuario.debeCambiarContrasena = usuario.debe_cambiar_contrasena;
     req.usuario = usuario;
     next();
   } catch (err) {

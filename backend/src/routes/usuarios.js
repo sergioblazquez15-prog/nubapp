@@ -169,8 +169,12 @@ router.put('/:id/password', autenticar, async (req, res) => {
 
   try {
     const passwordHash = await bcrypt.hash(password, RONDAS_BCRYPT);
+    // Al cambiarla (la ponga un admin o el propio usuario) ya es una
+    // contraseña elegida de verdad, así que se quita la obligación de
+    // cambiarla que llevaban las cuentas creadas con la contraseña
+    // inicial automática (ver debe_cambiar_contrasena).
     const { rows } = await pool.query(
-      'UPDATE usuarios SET password_hash = $1 WHERE id = $2 RETURNING id',
+      'UPDATE usuarios SET password_hash = $1, debe_cambiar_contrasena = FALSE WHERE id = $2 RETURNING id',
       [passwordHash, req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });

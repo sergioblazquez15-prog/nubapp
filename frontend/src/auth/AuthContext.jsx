@@ -38,8 +38,17 @@ export function ProveedorAuth({ children }) {
     return Boolean(usuario) && roles.some((r) => usuario.roles.includes(r));
   }
 
+  // Tras cambiar la contraseña obligatoria (ver CambiarContrasenaObligatoria):
+  // ya no hace falta volver a pedírsela, sin tener que recargar toda la
+  // sesión.
+  function marcarContrasenaCambiada() {
+    setUsuario((actual) => (actual ? { ...actual, debeCambiarContrasena: false } : actual));
+  }
+
   return (
-    <ContextoAuth.Provider value={{ usuario, cargando, iniciarSesion, cerrarSesion, tieneRol }}>
+    <ContextoAuth.Provider
+      value={{ usuario, cargando, iniciarSesion, cerrarSesion, tieneRol, marcarContrasenaCambiada }}
+    >
       {children}
     </ContextoAuth.Provider>
   );

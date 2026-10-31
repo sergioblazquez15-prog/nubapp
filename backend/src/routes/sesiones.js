@@ -73,8 +73,17 @@ router.get('/', autenticar, async (req, res) => {
     condiciones.push(`s.temporada_id = $${parametros.length}`);
   }
   try {
+    // De más cercana a más lejana: primero las de hoy en adelante (la de
+    // hoy o mañana la primera de todas), y después las ya pasadas, con la
+    // más reciente de esas arriba - así entras y lo primero que ves es lo
+    // próximo que toca, no la sesión más lejana en el tiempo (antes salía
+    // al revés, ver petición de Sergio del 2026-10-13).
     const { rows } = await pool.query(
-      `SELECT s.* FROM sesiones s WHERE ${condiciones.join(' AND ')} ORDER BY s.fecha DESC, s.hora_inicio DESC NULLS LAST`,
+      `SELECT s.* FROM sesiones s WHERE ${condiciones.join(' AND ')}
+       ORDER BY (s.fecha < CURRENT_DATE),
+                CASE WHEN s.fecha >= CURRENT_DATE THEN s.fecha END ASC,
+                CASE WHEN s.fecha < CURRENT_DATE THEN s.fecha END DESC,
+                s.hora_inicio ASC NULLS LAST`,
       parametros
     );
     res.json(rows.map(filaASesion));

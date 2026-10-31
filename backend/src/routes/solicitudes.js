@@ -13,16 +13,13 @@ const { requiereRol, GESTION_DEPORTIVA } = require('../middleware/permisos');
 
 const RONDAS_BCRYPT = 10;
 
-// Genera una contraseña inicial para el acceso a "Mi app" que se crea al
-// aprobar una solicitud - formato fácil de transcribir a mano (sin
-// caracteres ambiguos como 0/O o 1/l/I), 10 caracteres. Mismo criterio que
-// en la importación de Excel (ver routes/deportistas.js).
-function generarPasswordAleatoria() {
-  const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let resultado = '';
-  for (let i = 0; i < 10; i++) resultado += caracteres[Math.floor(Math.random() * caracteres.length)];
-  return resultado;
-}
+// Contraseña inicial fija para el acceso a "Mi app" que se crea al
+// aprobar una solicitud (antes se generaba una aleatoria de 10
+// caracteres). Mismo criterio que en la importación de Excel (ver
+// PASSWORD_INICIAL_AUTOMATICA en routes/deportistas.js): el usuario queda
+// marcado con debe_cambiar_contrasena para que la app le obligue a
+// ponerse una propia la primera vez que entra.
+const PASSWORD_INICIAL_AUTOMATICA = '1234';
 
 function filaASolicitud(fila) {
   return {
@@ -155,11 +152,12 @@ router.post('/:id/aprobar', autenticar, requiereRol(...GESTION_DEPORTIVA), async
         .toLowerCase().replace(/[^a-z0-9.]/g, '')
         + '.' + deportistaId.replace(/-/g, '').slice(-6) + '@adnb-nubapp.es';
     }
-    const passwordFinal = generarPasswordAleatoria();
+    const passwordFinal = PASSWORD_INICIAL_AUTOMATICA;
     const passwordHash = await bcrypt.hash(passwordFinal, RONDAS_BCRYPT);
 
     const { rows: nuevoUsuario } = await cliente.query(
-      'INSERT INTO usuarios (email, password_hash, nombre_completo) VALUES ($1, $2, $3) RETURNING id',
+      `INSERT INTO usuarios (email, password_hash, nombre_completo, debe_cambiar_contrasena)
+       VALUES ($1, $2, $3, TRUE) RETURNING id`,
       [emailFinal, passwordHash, `${s.nombre} ${s.apellidos}`]
     );
     const usuarioId = nuevoUsuario[0].id;

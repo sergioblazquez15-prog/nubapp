@@ -60,10 +60,12 @@ router.get('/resumen', autenticar, async (req, res) => {
       .filter((d) => d.lesionado)
       .map((d) => ({ deportistaId: d.id, nombre: d.nombre, apellidos: d.apellidos, detalle: d.lesion_detalle }));
 
-    // ---- equipos visibles (resultados y faltas): administrador y
-    // dirección deportiva ven todos; el resto solo los suyos (parámetro
-    // $2 en ambas consultas de abajo, cuando aplica).
+    // ---- equipos visibles (resultados, próximo partido y faltas):
+    // administrador y dirección deportiva ven todos; el resto solo los
+    // suyos (parámetro $2 en estas consultas, cuando aplica - todas
+    // llevan como mucho temporada + usuario, así que $2 es seguro aquí).
     let resultadosRecientes = [];
+    let proximoPartido = null;
     let faltasSinJustificar = [];
 
     if (temporada) {
@@ -71,7 +73,7 @@ router.get('/resumen', autenticar, async (req, res) => {
         ? ''
         : `AND EXISTS (SELECT 1 FROM equipo_personal ep WHERE ep.equipo_id = e.id AND ep.usuario_id = $2)`;
       const { rows } = await pool.query(
-        `SELECT p.fecha, p.rival, p.local_visitante, p.resultado_propio, p.resultado_rival,
+        `SELECT p.id, p.fecha, p.rival, p.local_visitante, p.resultado_propio, p.resultado_rival,
                 e.nombre AS equipo_nombre
          FROM partidos p
          JOIN equipos e ON e.id = p.equipo_id
@@ -81,6 +83,7 @@ router.get('/resumen', autenticar, async (req, res) => {
         tieneAccesoTotal ? [temporada.id] : [temporada.id, usuarioId]
       );
       resultadosRecientes = rows.map((f) => ({
+        id: f.id,
         equipoNombre: f.equipo_nombre,
         fecha: f.fecha,
         rival: f.rival,
@@ -88,6 +91,31 @@ router.get('/resumen', autenticar, async (req, res) => {
         resultadoPropio: f.resultado_propio,
         resultadoRival: f.resultado_rival,
       }));
+
+      // Próximo partido (el que esté más cerca en el tiempo, aunque sea
+      // del mes que viene - por eso es una consulta aparte de
+      // "partidosDelMes", que solo mira el mes en curso para el
+      // calendario visual). Mismo filtro de "mis equipos" que el resto.
+      const { rows: proximoRows } = await pool.query(
+        `SELECT p.id, p.fecha, p.hora, p.rival, p.local_visitante, e.nombre AS equipo_nombre
+         FROM partidos p
+         JOIN equipos e ON e.id = p.equipo_id
+         WHERE p.jugado = FALSE AND p.temporada_id = $1 AND p.fecha >= CURRENT_DATE ${filtroEqResultados}
+         ORDER BY p.fecha ASC, p.hora ASC NULLS LAST
+         LIMIT 1`,
+        tieneAccesoTotal ? [temporada.id] : [temporada.id, usuarioId]
+      );
+      if (proximoRows[0]) {
+        const p = proximoRows[0];
+        proximoPartido = {
+          id: p.id,
+          equipoNombre: p.equipo_nombre,
+          fecha: p.fecha,
+          hora: p.hora,
+          rival: p.rival,
+          localVisitante: p.local_visitante,
+        };
+      }
 
       const filtroEqFaltas = tieneAccesoTotal
         ? ''
@@ -123,13 +151,24 @@ router.get('/resumen', autenticar, async (req, res) => {
     let partidosDelMes = [];
 
     if (temporada) {
-      const filtroEqPropio = tieneAccesoTotal
+      // OJO: el marcador de posición de "ep.usuario_id" depende de cuántos
+      // parámetros lleve ya cada consulta antes de él - $2 en la de
+      // totalEquipos (solo temporada antes), pero $4 en las de sesiones y
+      // partidos del mes (temporada + fecha desde + fecha hasta antes). Se
+      // usan dos variantes para no reutilizar por error el mismo número en
+      // consultas con distinto número de parámetros (eso causaba un error
+      // "operator does not exist: uuid = date", ya que $2 apuntaba a la
+      // fecha de inicio de mes en vez de al usuario).
+      const filtroEqPropioSoloTemporada = tieneAccesoTotal
         ? ''
         : `AND EXISTS (SELECT 1 FROM equipo_personal ep WHERE ep.equipo_id = e.id AND ep.usuario_id = $2)`;
+      const filtroEqPropioConFechas = tieneAccesoTotal
+        ? ''
+        : `AND EXISTS (SELECT 1 FROM equipo_personal ep WHERE ep.equipo_id = e.id AND ep.usuario_id = $4)`;
 
       const { rows: equiposRows } = await pool.query(
         `SELECT COUNT(*)::int AS total FROM equipos e
-         WHERE e.temporada_id = $1 AND e.inactivo = FALSE ${filtroEqPropio}`,
+         WHERE e.temporada_id = $1 AND e.inactivo = FALSE ${filtroEqPropioSoloTemporada}`,
         tieneAccesoTotal ? [temporada.id] : [temporada.id, usuarioId]
       );
       totalEquipos = equiposRows[0]?.total || 0;
@@ -141,7 +180,7 @@ router.get('/resumen', autenticar, async (req, res) => {
          FROM sesiones s
          JOIN equipos e ON e.id = s.equipo_id
          WHERE s.temporada_id = $1 AND s.cancelada = FALSE
-           AND s.fecha BETWEEN $2 AND $3 ${filtroEqPropio}
+           AND s.fecha BETWEEN $2 AND $3 ${filtroEqPropioConFechas}
          ORDER BY s.fecha`,
         tieneAccesoTotal
           ? [temporada.id, inicioMes.toISOString().slice(0, 10), finMes.toISOString().slice(0, 10)]
@@ -166,7 +205,7 @@ router.get('/resumen', autenticar, async (req, res) => {
          FROM partidos p
          JOIN equipos e ON e.id = p.equipo_id
          WHERE p.temporada_id = $1
-           AND p.fecha BETWEEN $2 AND $3 ${filtroEqPropio}
+           AND p.fecha BETWEEN $2 AND $3 ${filtroEqPropioConFechas}
          ORDER BY p.fecha`,
         tieneAccesoTotal
           ? [temporada.id, inicioMes.toISOString().slice(0, 10), finMes.toISOString().slice(0, 10)]
@@ -213,6 +252,7 @@ router.get('/resumen', autenticar, async (req, res) => {
       cumpleanosSemana,
       lesionados,
       resultadosRecientes,
+      proximoPartido,
       faltasSinJustificar,
       rotacionEjercicios,
     });

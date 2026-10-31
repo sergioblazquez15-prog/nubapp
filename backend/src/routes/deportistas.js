@@ -647,15 +647,13 @@ function parsearFechaNacimientoImport(valorCelda) {
   return null;
 }
 
-// Genera una contraseña inicial cuando la fila no trae una válida (o no
-// trae ninguna) - formato fácil de transcribir a mano (sin caracteres
-// ambiguos como 0/O o 1/l/I), 10 caracteres.
-function generarPasswordAleatoria() {
-  const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let resultado = '';
-  for (let i = 0; i < 10; i++) resultado += caracteres[Math.floor(Math.random() * caracteres.length)];
-  return resultado;
-}
+// Contraseña inicial cuando la fila no trae una válida (o no trae
+// ninguna): fija y fácil de comunicar a la familia (antes se generaba una
+// aleatoria de 10 caracteres, difícil de transcribir a mano). Como la
+// sabe cualquiera, el usuario queda marcado con debe_cambiar_contrasena
+// para que la app le obligue a ponerse una propia la primera vez que
+// entra (ver columna en usuarios y el login en routes/auth.js).
+const PASSWORD_INICIAL_AUTOMATICA = '1234';
 
 // POST /api/deportistas/importar - multipart: campo "archivo" (el Excel)
 // + temporadaId (a qué temporada se asignan los equipos de cada fila).
@@ -863,7 +861,7 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
         let passwordFinal = passwordInicial;
         let passwordGenerada = false;
         if (!passwordFinal || passwordFinal.length < 8) {
-          passwordFinal = generarPasswordAleatoria();
+          passwordFinal = PASSWORD_INICIAL_AUTOMATICA;
           passwordGenerada = true;
         }
 
@@ -872,8 +870,9 @@ router.post('/importar', autenticar, requiereRol('administrador'), subidaExcelDe
           await clienteAcceso.query('BEGIN');
           const passwordHash = await bcrypt.hash(passwordFinal, RONDAS_BCRYPT);
           const { rows: nuevoUsuario } = await clienteAcceso.query(
-            'INSERT INTO usuarios (email, password_hash, nombre_completo) VALUES ($1, $2, $3) RETURNING id',
-            [emailFinal, passwordHash, `${nombre} ${apellidos}`]
+            `INSERT INTO usuarios (email, password_hash, nombre_completo, debe_cambiar_contrasena)
+             VALUES ($1, $2, $3, $4) RETURNING id`,
+            [emailFinal, passwordHash, `${nombre} ${apellidos}`, passwordGenerada]
           );
           const usuarioId = nuevoUsuario[0].id;
           const { rows: rolDeportista } = await clienteAcceso.query(`SELECT id FROM roles WHERE nombre = 'deportista'`);

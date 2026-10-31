@@ -72,6 +72,7 @@ export default function Inicio() {
 
             <div className="columna-inicio">
               <TarjetaConfirmacionesSemana items={confirmaciones} />
+              <TarjetaProximoPartido partido={resumen.proximoPartido} />
               <TarjetaCumpleanos items={resumen.cumpleanosSemana} />
               <TarjetaLesionados items={resumen.lesionados} />
               <TarjetaFaltas items={resumen.faltasSinJustificar} />
@@ -286,6 +287,31 @@ function TarjetaLesionados({ items }) {
   );
 }
 
+// Siguiente partido pendiente (el más próximo en el tiempo, aunque sea
+// del mes que viene), con fecha y hora si la tiene - clicable, lleva a
+// la ficha de ese partido igual que "Resultados recientes".
+function TarjetaProximoPartido({ partido }) {
+  return (
+    <div className="tarjeta tarjeta-dashboard tarjeta-inicio acento-dorado">
+      <CabeceraTarjetaInicio icono="📅" titulo="Siguiente partido" />
+      {!partido ? (
+        <p className="nota">No hay ningún partido programado todavía.</p>
+      ) : (
+        <Link to={`/partidos/${partido.id}/directo`} className="fila-inicio fila-inicio-clicable">
+          <span style={{ flex: 1 }}>
+            {partido.equipoNombre ? <span className="equipo-del-partido">{partido.equipoNombre} · </span> : null}
+            vs {partido.rival}
+          </span>
+          <span className="nota fila-inicio-extra">
+            {partido.localVisitante === 'local' ? 'local' : 'visit.'} · {partido.fecha?.slice(0, 10)}
+            {partido.hora ? ` · ${partido.hora.slice(0, 5)}` : ''}
+          </span>
+        </Link>
+      )}
+    </div>
+  );
+}
+
 function TarjetaResultados({ items }) {
   return (
     <div className="tarjeta tarjeta-dashboard tarjeta-inicio acento-azul">
@@ -299,12 +325,14 @@ function TarjetaResultados({ items }) {
             const rival = Number(p.resultadoRival);
             const resultado = propio > rival ? 'victoria' : propio < rival ? 'derrota' : 'empate';
             return (
-              <li key={i} className="fila-inicio">
-                <span className={`resultado-badge resultado-${resultado}`}>{p.resultadoPropio}-{p.resultadoRival}</span>
-                <span>{p.equipoNombre} vs {p.rival}</span>
-                <span className="nota fila-inicio-extra">
-                  {p.localVisitante === 'local' ? 'local' : 'visit.'} · {p.fecha?.slice(0, 10)}
-                </span>
+              <li key={i} className="fila-inicio fila-inicio-clicable">
+                <Link to={`/partidos/${p.id}/directo`} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                  <span className={`resultado-badge resultado-${resultado}`}>{p.resultadoPropio}-{p.resultadoRival}</span>
+                  <span style={{ flex: 1 }}>{p.equipoNombre} vs {p.rival}</span>
+                  <span className="nota fila-inicio-extra">
+                    {p.localVisitante === 'local' ? 'local' : 'visit.'} · {p.fecha?.slice(0, 10)}
+                  </span>
+                </Link>
               </li>
             );
           })}

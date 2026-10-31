@@ -47,6 +47,7 @@ function filaAPartido(fila) {
     periodoSegundosAcumulados: fila.periodo_segundos_acumulados,
     posesionActual: fila.posesion_actual,
     minutoActual: calcularMinutoActual(fila),
+    comentarioCierre: fila.comentario_cierre,
   };
 }
 
@@ -59,6 +60,10 @@ function filaAEvento(fila) {
     ocasionClara: fila.ocasion_clara,
     deportistaId: fila.deportista_id,
     deportistaNombre: fila.deportista_nombre,
+    asistenciaDeportistaId: fila.asistencia_deportista_id,
+    asistenciaNombre: fila.asistencia_nombre,
+    deportistaSaleId: fila.deportista_sale_id,
+    deportistaSaleNombre: fila.deportista_sale_nombre,
     descripcion: fila.descripcion,
     creadoEn: fila.creado_en,
   };
@@ -101,6 +106,7 @@ const TIPOS_EVENTO = [
   'falta_favor', 'falta_contra',
   'corner_favor', 'corner_contra',
   'posesion_cambio',
+  'cambio',
   'otro',
 ];
 
@@ -185,7 +191,11 @@ router.get('/', autenticar, async (req, res) => {
          LEFT JOIN competiciones c ON c.id = p.competicion_id
          JOIN equipos e ON e.id = p.equipo_id
          LEFT JOIN partidos_confirmacion pc ON pc.partido_id = p.id AND pc.deportista_id = $${marcadorDeportista}
-         WHERE ${condiciones.join(' AND ')} ORDER BY p.fecha DESC, p.hora DESC NULLS LAST`,
+         WHERE ${condiciones.join(' AND ')}
+         ORDER BY (p.fecha < CURRENT_DATE),
+                  CASE WHEN p.fecha >= CURRENT_DATE THEN p.fecha END ASC,
+                  CASE WHEN p.fecha < CURRENT_DATE THEN p.fecha END DESC,
+                  p.hora ASC NULLS LAST`,
         parametros
       );
       res.json(rows.map((f) => ({
@@ -219,7 +229,11 @@ router.get('/', autenticar, async (req, res) => {
        JOIN equipos e ON e.id = p.equipo_id
        JOIN deportes dep ON dep.id = e.deporte_id
        LEFT JOIN competiciones c ON c.id = p.competicion_id
-       WHERE ${condiciones.join(' AND ')} ORDER BY p.fecha DESC, p.hora DESC NULLS LAST`,
+       WHERE ${condiciones.join(' AND ')}
+       ORDER BY (p.fecha < CURRENT_DATE),
+                CASE WHEN p.fecha >= CURRENT_DATE THEN p.fecha END ASC,
+                CASE WHEN p.fecha < CURRENT_DATE THEN p.fecha END DESC,
+                p.hora ASC NULLS LAST`,
       parametros
     );
     res.json(rows.map((f) => ({ ...filaAPartido(f), equipoNombre: f.equipo_nombre })));
@@ -516,6 +530,7 @@ router.put('/:id/directo/reanudar', autenticar, async (req, res) => {
 // para que el entrenador la arranque cuando quiera. Si ya no quedan más
 // partes configuradas, da el partido por finalizado y jugado.
 router.put('/:id/directo/siguiente-parte', autenticar, async (req, res) => {
+  const { comentarioCierre } = req.body;
   try {
     const partido = await partidoYPermisoGestion(req, req.params.id);
     const partes = partido.configuracion_partes;
@@ -540,9 +555,10 @@ router.put('/:id/directo/siguiente-parte', autenticar, async (req, res) => {
            periodo = 'Finalizado',
            en_directo = FALSE,
            jugado = TRUE,
-           periodo_iniciado_en = NULL
+           periodo_iniciado_en = NULL,
+           comentario_cierre = COALESCE($2, comentario_cierre)
          WHERE id = $1 RETURNING *`,
-        [req.params.id]
+        [req.params.id, comentarioCierre || null]
       ));
     }
     res.json(filaAPartido(rows[0]));
@@ -562,6 +578,7 @@ router.put('/:id/directo/siguiente-parte', autenticar, async (req, res) => {
 // poder cerrar el directo sin tener que ir pulsando "siguiente parte"
 // una por una hasta agotar las partes que quedaban.
 router.put('/:id/directo/finalizar', autenticar, async (req, res) => {
+  const { comentarioCierre } = req.body;
   try {
     const partido = await partidoYPermisoGestion(req, req.params.id);
     if (!partido.en_directo) {
@@ -577,9 +594,10 @@ router.put('/:id/directo/finalizar', autenticar, async (req, res) => {
          en_directo = FALSE,
          jugado = TRUE,
          periodo_segundos_acumulados = $1,
-         periodo_iniciado_en = NULL
+         periodo_iniciado_en = NULL,
+         comentario_cierre = COALESCE($3, comentario_cierre)
        WHERE id = $2 RETURNING *`,
-      [segundosAcumulados, req.params.id]
+      [segundosAcumulados, req.params.id, comentarioCierre || null]
     );
     res.json(filaAPartido(rows[0]));
   } catch (err) {
@@ -636,7 +654,9 @@ router.put('/:id/directo/posesion', autenticar, async (req, res) => {
 });
 
 // GET /api/partidos/:id/resumen - recuento agregado de eventos (para el
-// resumen del descanso o para consultarlo en cualquier momento).
+// resumen del descanso o para consultarlo en cualquier momento), más el
+// detalle de goles (con asistencia), tarjetas (con motivo) y cambios —
+// para el resumen visual y el informe imprimible del final del partido.
 router.get('/:id/resumen', autenticar, async (req, res) => {
   try {
     const { rows: partido } = await pool.query('SELECT equipo_id FROM partidos WHERE id = $1', [req.params.id]);
@@ -672,9 +692,14 @@ router.get('/:id/eventos', autenticar, async (req, res) => {
       return res.status(403).json({ error: 'No tienes permiso para esto' });
     }
     const { rows } = await pool.query(
-      `SELECT ev.*, d.nombre || ' ' || d.apellidos AS deportista_nombre
+      `SELECT ev.*,
+              d.nombre || ' ' || d.apellidos AS deportista_nombre,
+              da.nombre || ' ' || da.apellidos AS asistencia_nombre,
+              ds.nombre || ' ' || ds.apellidos AS deportista_sale_nombre
        FROM partidos_eventos ev
        LEFT JOIN deportistas d ON d.id = ev.deportista_id
+       LEFT JOIN deportistas da ON da.id = ev.asistencia_deportista_id
+       LEFT JOIN deportistas ds ON ds.id = ev.deportista_sale_id
        WHERE ev.partido_id = $1 ORDER BY ev.creado_en ASC`,
       [req.params.id]
     );
@@ -689,8 +714,16 @@ router.get('/:id/eventos', autenticar, async (req, res) => {
 // calcula solo a partir del cronómetro del partido (no se escribe a
 // mano). Un gol suma al momento en el marcador
 // (resultado_propio/resultado_rival).
+// body: { tipo, deportistaId, asistenciaDeportistaId, deportistaSaleId,
+//         descripcion, ocasionClara }
+// - deportistaId: quién mete el gol/recibe la tarjeta/tira/etc., o quién
+//   ENTRA en un cambio. Nunca obligatorio (no siempre se sabe en caliente).
+// - asistenciaDeportistaId: solo tiene sentido en 'gol_propio'. Opcional
+//   siempre (no todos los goles tienen asistencia).
+// - deportistaSaleId: solo tiene sentido en 'cambio' (quién sale).
+// - descripcion: texto libre; en las tarjetas propias se usa como motivo.
 router.post('/:id/eventos', autenticar, async (req, res) => {
-  const { tipo, deportistaId, descripcion, ocasionClara } = req.body;
+  const { tipo, deportistaId, asistenciaDeportistaId, deportistaSaleId, descripcion, ocasionClara } = req.body;
   if (!TIPOS_EVENTO.includes(tipo)) {
     return res.status(400).json({ error: `tipo debe ser una de: ${TIPOS_EVENTO.join(', ')}` });
   }
@@ -699,9 +732,16 @@ router.post('/:id/eventos', autenticar, async (req, res) => {
     const minuto = calcularMinutoActual(partido);
 
     const { rows } = await pool.query(
-      `INSERT INTO partidos_eventos (partido_id, minuto, tipo, deportista_id, descripcion, ocasion_clara, creado_por)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [req.params.id, minuto, tipo, deportistaId || null, descripcion || null, ocasionClara === true, req.usuario.id]
+      `INSERT INTO partidos_eventos
+         (partido_id, minuto, tipo, deportista_id, asistencia_deportista_id, deportista_sale_id, descripcion, ocasion_clara, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [
+        req.params.id, minuto, tipo,
+        deportistaId || null,
+        tipo === 'gol_propio' ? (asistenciaDeportistaId || null) : null,
+        tipo === 'cambio' ? (deportistaSaleId || null) : null,
+        descripcion || null, ocasionClara === true, req.usuario.id,
+      ]
     );
 
     if (tipo === 'gol_propio') {
