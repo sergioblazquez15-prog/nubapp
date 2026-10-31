@@ -77,6 +77,8 @@ function filaAConvocado(fila) {
     apellidos: fila.apellidos,
     dorsal: fila.dorsal,
     titular: fila.titular,
+    equipoOrigenId: fila.equipo_origen_id,
+    equipoOrigenNombre: fila.equipo_origen_nombre,
   };
 }
 
@@ -398,22 +400,85 @@ router.put('/:id/mi-confirmacion', autenticar, async (req, res) => {
 // GET /api/partidos/:id/alineacion - convocados a este partido.
 router.get('/:id/alineacion', autenticar, async (req, res) => {
   try {
-    const { rows: partido } = await pool.query('SELECT equipo_id FROM partidos WHERE id = $1', [req.params.id]);
+    const { rows: partido } = await pool.query('SELECT equipo_id, temporada_id FROM partidos WHERE id = $1', [req.params.id]);
     if (!partido[0]) return res.status(404).json({ error: 'Partido no encontrado' });
     if (!(await puedeVerEquipo(req, partido[0].equipo_id))) {
       return res.status(403).json({ error: 'No tienes permiso para esto' });
     }
+    // equipo_origen_*: de qué equipo es el convocado ESTA temporada — para
+    // poder avisar en el frontend cuando no es del equipo de este partido
+    // (p.ej. un juvenil que sube a completar al Regional esa semana, ver
+    // GET /:id/buscar-jugador más abajo).
     const { rows } = await pool.query(
-      `SELECT pa.*, d.nombre, d.apellidos FROM partidos_alineacion pa
+      `SELECT pa.*, d.nombre, d.apellidos,
+              (SELECT e2.id FROM deportista_equipo_temporada det2
+               JOIN equipos e2 ON e2.id = det2.equipo_id
+               WHERE det2.deportista_id = d.id AND det2.temporada_id = $2 LIMIT 1) AS equipo_origen_id,
+              (SELECT e2.nombre FROM deportista_equipo_temporada det2
+               JOIN equipos e2 ON e2.id = det2.equipo_id
+               WHERE det2.deportista_id = d.id AND det2.temporada_id = $2 LIMIT 1) AS equipo_origen_nombre
+       FROM partidos_alineacion pa
        JOIN deportistas d ON d.id = pa.deportista_id
        WHERE pa.partido_id = $1
        ORDER BY pa.titular DESC, pa.dorsal NULLS LAST, d.apellidos`,
-      [req.params.id]
+      [req.params.id, partido[0].temporada_id]
     );
     res.json(rows.map(filaAConvocado));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al consultar la convocatoria' });
+  }
+});
+
+// GET /api/partidos/:id/buscar-jugador?q=&equipoId= - busca deportistas
+// de CUALQUIER equipo del club (no solo el de este partido), para poder
+// incorporar a la convocatoria a un jugador que sube de otro equipo esa
+// semana (p.ej. un juvenil que completa al Regional). Se usa el mismo
+// permiso que para gestionar este partido en concreto — a propósito NO
+// se reutiliza el filtrado de GET /api/deportistas (que a un
+// entrenador/coordinador solo le deja ver los deportistas de SUS propios
+// equipos): aquí hace falta poder ver a cualquiera del club. q busca por
+// nombre o apellidos; equipoId filtra por el equipo de origen; con los
+// dos vacíos no devuelve nada (para no soltar de golpe el listado
+// completo del club).
+router.get('/:id/buscar-jugador', autenticar, async (req, res) => {
+  const { q, equipoId } = req.query;
+  if (!q && !equipoId) return res.json([]);
+  try {
+    const partido = await partidoYPermisoGestion(req, req.params.id);
+    const condiciones = ['d.inactivo = FALSE'];
+    const parametros = [partido.temporada_id];
+    if (q) {
+      parametros.push(`%${q}%`);
+      condiciones.push(`(d.nombre ILIKE $${parametros.length} OR d.apellidos ILIKE $${parametros.length})`);
+    }
+    if (equipoId) {
+      parametros.push(equipoId);
+      condiciones.push(`det.equipo_id = $${parametros.length}`);
+    }
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (d.id) d.id, d.nombre, d.apellidos, det.dorsal,
+              e.id AS equipo_id, e.nombre AS equipo_nombre
+       FROM deportistas d
+       JOIN deportista_equipo_temporada det ON det.deportista_id = d.id AND det.temporada_id = $1
+       JOIN equipos e ON e.id = det.equipo_id
+       WHERE ${condiciones.join(' AND ')}
+       ORDER BY d.id, e.nombre
+       LIMIT 40`,
+      parametros
+    );
+    res.json(rows.map((r) => ({
+      deportistaId: r.id,
+      nombre: r.nombre,
+      apellidos: r.apellidos,
+      dorsal: r.dorsal,
+      equipoId: r.equipo_id,
+      equipoNombre: r.equipo_nombre,
+    })));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Error al buscar jugadores' });
   }
 });
 

@@ -299,7 +299,7 @@ function MarcadorDirecto({ partidoId, equipoId, equipoNombre, puedeGestionar }) 
         <div className="directo-cuerpo">
           {antesDeEmpezar && (
             <AlineacionPartido
-              partidoId={partidoId} equipoId={equipoId} puedeGestionar={puedeGestionar}
+              partidoId={partidoId} equipoId={equipoId} temporadaId={partido.temporadaId} puedeGestionar={puedeGestionar}
               convocados={convocados} onGuardado={cargar}
             />
           )}
@@ -322,7 +322,7 @@ function MarcadorDirecto({ partidoId, equipoId, equipoNombre, puedeGestionar }) 
           )}
           {!antesDeEmpezar && mostrarConvocatoria && (
             <AlineacionPartido
-              partidoId={partidoId} equipoId={equipoId} puedeGestionar={puedeGestionar}
+              partidoId={partidoId} equipoId={equipoId} temporadaId={partido.temporadaId} puedeGestionar={puedeGestionar}
               convocados={convocados} onGuardado={cargar}
             />
           )}
@@ -618,16 +618,28 @@ function ModalCierrePartido({ onConfirmar, onCerrar }) {
   );
 }
 
-function AlineacionPartido({ partidoId, equipoId, puedeGestionar, convocados, onGuardado }) {
+function AlineacionPartido({ partidoId, equipoId, temporadaId, puedeGestionar, convocados, onGuardado }) {
   const [plantilla, setPlantilla] = useState([]);
+  // Jugadores incorporados de OTRO equipo (p.ej. un juvenil que sube a
+  // completar al Regional esa semana) — no están en la plantilla propia
+  // del equipo de este partido, así que se llevan aparte y se pintan en
+  // la misma tabla con una etiqueta de qué equipo son.
+  const [extras, setExtras] = useState([]);
   const [seleccion, setSeleccion] = useState({});
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [mostrarBuscador, setMostrarBuscador] = useState(false);
 
   useEffect(() => {
     api.get(`/equipos/${equipoId}`).then((eq) => {
       const lista = eq.deportistas || [];
       setPlantilla(lista);
+      const idsPlantilla = new Set(lista.map((d) => d.id));
+      const ajenos = convocados.filter((c) => !idsPlantilla.has(c.deportistaId));
+      setExtras(ajenos.map((c) => ({
+        deportistaId: c.deportistaId, nombre: c.nombre, apellidos: c.apellidos,
+        equipoOrigenNombre: c.equipoOrigenNombre,
+      })));
       const inicial = {};
       lista.forEach((d) => {
         const convocado = convocados.find((c) => c.deportistaId === d.id);
@@ -637,6 +649,9 @@ function AlineacionPartido({ partidoId, equipoId, puedeGestionar, convocados, on
           titular: convocado ? convocado.titular : true,
         };
       });
+      ajenos.forEach((c) => {
+        inicial[c.deportistaId] = { incluido: true, dorsal: c.dorsal ?? '', titular: c.titular };
+      });
       setSeleccion(inicial);
     }).catch((err) => setError(err.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -644,6 +659,30 @@ function AlineacionPartido({ partidoId, equipoId, puedeGestionar, convocados, on
 
   function actualizar(id, campo, valor) {
     setSeleccion((actual) => ({ ...actual, [id]: { ...actual[id], [campo]: valor } }));
+  }
+
+  function agregarJugadorDeOtroEquipo(jugador) {
+    const yaEsta = plantilla.some((d) => d.id === jugador.deportistaId) || extras.some((e) => e.deportistaId === jugador.deportistaId);
+    if (!yaEsta) {
+      setExtras((actual) => [...actual, {
+        deportistaId: jugador.deportistaId, nombre: jugador.nombre, apellidos: jugador.apellidos,
+        equipoOrigenNombre: jugador.equipoNombre,
+      }]);
+    }
+    setSeleccion((actual) => ({
+      ...actual,
+      [jugador.deportistaId]: { incluido: true, dorsal: actual[jugador.deportistaId]?.dorsal ?? (jugador.dorsal ?? ''), titular: false },
+    }));
+    setMostrarBuscador(false);
+  }
+
+  function quitarExtra(id) {
+    setExtras((actual) => actual.filter((e) => e.deportistaId !== id));
+    setSeleccion((actual) => {
+      const copia = { ...actual };
+      delete copia[id];
+      return copia;
+    });
   }
 
   async function guardar() {
@@ -669,7 +708,7 @@ function AlineacionPartido({ partidoId, equipoId, puedeGestionar, convocados, on
   if (!puedeGestionar) {
     return (
       <p className="nota" style={{ color: 'rgba(243,239,227,0.7)' }}>
-        Convocados: {convocados.length === 0 ? 'sin definir todavía' : convocados.map((c) => `${c.nombre}${c.titular === false ? ' (suplente)' : ''}`).join(', ')}
+        Convocados: {convocados.length === 0 ? 'sin definir todavía' : convocados.map((c) => `${c.nombre}${c.titular === false ? ' (suplente)' : ''}${c.equipoOrigenNombre ? ` (${c.equipoOrigenNombre})` : ''}`).join(', ')}
       </p>
     );
   }
@@ -681,7 +720,7 @@ function AlineacionPartido({ partidoId, equipoId, puedeGestionar, convocados, on
   return (
     <div className="tarjeta" style={{ maxWidth: 'none', margin: '8px 0' }}>
       <h3 style={{ marginTop: 0, fontSize: 15 }}>Convocatoria</h3>
-      {plantilla.length === 0 ? (
+      {plantilla.length === 0 && extras.length === 0 ? (
         <p className="nota">Este equipo todavía no tiene plantilla fichada esta temporada.</p>
       ) : (
         <>
@@ -693,7 +732,7 @@ function AlineacionPartido({ partidoId, equipoId, puedeGestionar, convocados, on
           <div className="tabla-scroll" style={{ marginBottom: 12 }}>
             <table className="tabla-usuarios">
               <thead>
-                <tr><th></th><th>Jugador</th><th>Dorsal</th><th>¿Titular o suplente?</th></tr>
+                <tr><th></th><th>Jugador</th><th>Dorsal</th><th>¿Titular o suplente?</th><th></th></tr>
               </thead>
               <tbody>
                 {plantilla.map((d) => {
@@ -728,6 +767,46 @@ function AlineacionPartido({ partidoId, equipoId, puedeGestionar, convocados, on
                           </button>
                         </div>
                       </td>
+                      <td></td>
+                    </tr>
+                  );
+                })}
+                {extras.map((d) => {
+                  const v = seleccion[d.deportistaId] || {};
+                  return (
+                    <tr key={d.deportistaId}>
+                      <td><input type="checkbox" checked={!!v.incluido} onChange={(e) => actualizar(d.deportistaId, 'incluido', e.target.checked)} /></td>
+                      <td>
+                        {d.nombre} {d.apellidos}
+                        {' '}<span className="etiqueta-otro-equipo">{d.equipoOrigenNombre || 'otro equipo'}</span>
+                      </td>
+                      <td>
+                        <input
+                          type="number" min="0" style={{ maxWidth: 64 }} value={v.dorsal ?? ''}
+                          onChange={(e) => actualizar(d.deportistaId, 'dorsal', e.target.value)} disabled={!v.incluido}
+                        />
+                      </td>
+                      <td>
+                        <div className="selector-titularidad">
+                          <button
+                            type="button"
+                            className={v.titular !== false ? 'activo-titular' : ''}
+                            disabled={!v.incluido}
+                            onClick={() => actualizar(d.deportistaId, 'titular', true)}
+                          >
+                            Titular
+                          </button>
+                          <button
+                            type="button"
+                            className={v.titular === false ? 'activo-suplente' : ''}
+                            disabled={!v.incluido}
+                            onClick={() => actualizar(d.deportistaId, 'titular', false)}
+                          >
+                            Suplente
+                          </button>
+                        </div>
+                      </td>
+                      <td><button type="button" className="boton-enlace" onClick={() => quitarExtra(d.deportistaId)}>quitar</button></td>
                     </tr>
                   );
                 })}
@@ -736,8 +815,89 @@ function AlineacionPartido({ partidoId, equipoId, puedeGestionar, convocados, on
           </div>
         </>
       )}
+      <button type="button" className="boton-lesion" style={{ marginBottom: 12 }} onClick={() => setMostrarBuscador(true)}>
+        + Añadir jugador de otro equipo
+      </button>
       {error && <p className="error">{error}</p>}
-      <button onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar convocatoria'}</button>
+      <div>
+        <button onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar convocatoria'}</button>
+      </div>
+      {mostrarBuscador && (
+        <ModalBuscarJugadorOtroEquipo
+          partidoId={partidoId}
+          temporadaId={temporadaId}
+          onElegir={agregarJugadorDeOtroEquipo}
+          onCerrar={() => setMostrarBuscador(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Buscador para incorporar a la convocatoria un jugador que normalmente
+// juega en OTRO equipo del club (p.ej. un juvenil que sube a completar al
+// Regional esa semana) — por nombre/apellidos y/o filtrando por equipo de
+// origen. Ver GET /api/partidos/:id/buscar-jugador en el backend.
+function ModalBuscarJugadorOtroEquipo({ partidoId, temporadaId, onElegir, onCerrar }) {
+  const [equipos, setEquipos] = useState([]);
+  const [q, setQ] = useState('');
+  const [equipoFiltroId, setEquipoFiltroId] = useState('');
+  const [resultados, setResultados] = useState([]);
+  const [buscando, setBuscando] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!temporadaId) return;
+    api.get(`/equipos?temporadaId=${temporadaId}&estado=activo`).then(setEquipos).catch(() => {});
+  }, [temporadaId]);
+
+  useEffect(() => {
+    if (!q && !equipoFiltroId) { setResultados([]); return undefined; }
+    setBuscando(true);
+    const temporizador = setTimeout(() => {
+      const parametros = new URLSearchParams();
+      if (q) parametros.set('q', q);
+      if (equipoFiltroId) parametros.set('equipoId', equipoFiltroId);
+      api.get(`/partidos/${partidoId}/buscar-jugador?${parametros.toString()}`)
+        .then(setResultados)
+        .catch((err) => setError(err.message))
+        .finally(() => setBuscando(false));
+    }, 300);
+    return () => clearTimeout(temporizador);
+  }, [q, equipoFiltroId, partidoId]);
+
+  return (
+    <div className="modal-directo-fondo" onClick={onCerrar}>
+      <div className="modal-directo-panel" onClick={(e) => e.stopPropagation()}>
+        <h3>Añadir jugador de otro equipo</h3>
+        <p className="nota">Busca por nombre/apellido y, si quieres, filtra por el equipo donde juega normalmente.</p>
+        <div className="barra-filtros" style={{ marginBottom: 10 }}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre o apellido…" autoFocus style={{ flex: 1 }} />
+          <select value={equipoFiltroId} onChange={(e) => setEquipoFiltroId(e.target.value)}>
+            <option value="">Todos los equipos</option>
+            {equipos.map((eq) => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
+          </select>
+        </div>
+        {error && <p className="error">{error}</p>}
+        <div className="lista-seleccion-jugador">
+          {buscando && <p className="nota" style={{ padding: 8 }}>Buscando…</p>}
+          {!buscando && q === '' && equipoFiltroId === '' && (
+            <p className="nota" style={{ padding: 8 }}>Escribe un nombre o elige un equipo para empezar a buscar.</p>
+          )}
+          {!buscando && (q !== '' || equipoFiltroId !== '') && resultados.length === 0 && (
+            <p className="nota" style={{ padding: 8 }}>Sin resultados.</p>
+          )}
+          {resultados.map((r) => (
+            <div key={r.deportistaId} className="opcion-seleccion-jugador" onClick={() => onElegir(r)}>
+              {r.dorsal != null ? `${r.dorsal} · ` : ''}{r.nombre} {r.apellidos}
+              {' '}<span className="etiqueta-otro-equipo">{r.equipoNombre}</span>
+            </div>
+          ))}
+        </div>
+        <div className="acciones-fila">
+          <button type="button" onClick={onCerrar}>Cerrar</button>
+        </div>
+      </div>
     </div>
   );
 }

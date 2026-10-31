@@ -1726,6 +1726,21 @@ main {
   color: var(--color-texto);
 }
 
+/* Aviso de que un convocado es de OTRO equipo (p.ej. un juvenil que sube
+   a completar al Regional esa semana) — ver botón "+ Añadir jugador de
+   otro equipo" en la convocatoria. */
+.etiqueta-otro-equipo {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: #8a6a1e;
+  background: #fbead0;
+  padding: 2px 7px;
+  border-radius: 99px;
+}
+
 /* ---- Modal de directo (gol/tarjeta/cambio/cierre): mismo patrón que el
    resto de la app, pero flotando sobre la pantalla negra. ---- */
 .modal-directo-fondo {
